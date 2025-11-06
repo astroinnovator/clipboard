@@ -5,7 +5,16 @@ from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import create_engine, Column, Integer, String, MetaData, Table
+from sqlalchemy import (
+    create_engine,
+    Column,
+    Integer,
+    String,
+    MetaData,
+    Table,
+    text,
+    inspect,
+)
 from sqlalchemy.orm import sessionmaker
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -129,12 +138,33 @@ clipboard_updates = Table(
     Column("text", String, nullable=False),
 )
 
-# Create tables
+# Create tables and handle migrations
 try:
+    # First, check if we need to migrate existing tables
+    inspector = inspect(engine)
+    existing_tables = inspector.get_table_names()
+
+    if "users" in existing_tables:
+        # Check if secret_key column exists
+        columns = inspector.get_columns("users")
+        column_names = [col["name"] for col in columns]
+
+        if "secret_key" not in column_names:
+            print("Adding secret_key column to existing users table...")
+            with engine.connect() as conn:
+                conn.execute(
+                    text(
+                        "ALTER TABLE users ADD COLUMN IF NOT EXISTS secret_key VARCHAR(100);"
+                    )
+                )
+                conn.commit()
+            print("secret_key column added successfully")
+
+    # Create all tables (this will create new ones and skip existing ones)
     metadata.create_all(engine)
-    print("Tables created successfully")
+    print("Tables created/updated successfully")
 except Exception as e:
-    print(f"Error creating tables: {e}")
+    print(f"Error creating/updating tables: {e}")
     raise
 
 # Set up database session
