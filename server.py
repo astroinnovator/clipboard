@@ -102,6 +102,7 @@ users = Table(
     Column("username", String(50), unique=True, nullable=False),
     Column("password", String(50), nullable=False),
     Column("role", String(10), nullable=False),
+    Column("secret_key", String(100), nullable=True),
 )
 
 copied_text_history = Table(
@@ -155,6 +156,7 @@ async def startup_event():
                     username=DEFAULT_ADMIN_USERNAME,
                     password=DEFAULT_ADMIN_PASSWORD,
                     role="admin",
+                    secret_key=ADMIN_SECRET_KEY,
                 )
             )
             print(
@@ -173,6 +175,7 @@ async def startup_event():
                     username=DEFAULT_USER_USERNAME,
                     password=DEFAULT_USER_PASSWORD,
                     role="user",
+                    secret_key=USER_SECRET_KEY,
                 )
             )
             print(
@@ -236,9 +239,13 @@ async def admin_login(request: Request):
 
             # Check password, role, and secret key
             password_valid = user.password == password and user.role == "admin"
-            secret_key_valid = (
-                secret_key == ADMIN_SECRET_KEY or secret_key == GLOBAL_SECRET_KEY
-            )
+
+            # Validate secret key - check user's personal key, role defaults, or global key
+            secret_key_valid = False
+            if user.secret_key and secret_key == user.secret_key:
+                secret_key_valid = True
+            elif secret_key == ADMIN_SECRET_KEY or secret_key == GLOBAL_SECRET_KEY:
+                secret_key_valid = True
 
             if password_valid and secret_key_valid:
                 print("Login successful, setting session")
@@ -295,6 +302,7 @@ async def add_user(request: Request):
     username = form.get("username", "").strip()
     password = form.get("password", "").strip()
     role = form.get("role", "").strip()
+    secret_key = form.get("secret_key", "").strip()
 
     print(f"Adding new user - Username: {username}, Password: {password}, Role: {role}")
 
@@ -314,7 +322,9 @@ async def add_user(request: Request):
 
         # Insert the new user
         db.execute(
-            users.insert().values(username=username, password=password, role=role)
+            users.insert().values(
+                username=username, password=password, role=role, secret_key=secret_key
+            )
         )
         db.commit()
         print("User added successfully")
@@ -350,6 +360,7 @@ async def update_user(request: Request):
     user_id = form.get("user_id", "")
     new_username = form.get("username", "").strip()
     new_password = form.get("password", "").strip()
+    new_secret_key = form.get("secret_key", "").strip()
 
     print(
         f"Updating user - ID: {user_id}, New Username: {new_username}, New Password: {new_password}"
@@ -378,6 +389,10 @@ async def update_user(request: Request):
         update_values = {"username": new_username}
         if new_password:  # Only update password if a new one is provided
             update_values["password"] = new_password
+        if new_secret_key:  # Only update secret key if provided
+            update_values["secret_key"] = new_secret_key
+        elif new_secret_key == "":  # Allow clearing secret key with empty string
+            update_values["secret_key"] = None
         db.execute(users.update().where(users.c.id == user_id).values(**update_values))
         db.commit()
         print("User updated successfully")
@@ -500,9 +515,13 @@ async def user_login(request: Request):
 
             # Check password, role, and secret key
             password_valid = user.password == password and user.role == "user"
-            secret_key_valid = (
-                secret_key == USER_SECRET_KEY or secret_key == GLOBAL_SECRET_KEY
-            )
+
+            # Validate secret key - check user's personal key, role defaults, or global key
+            secret_key_valid = False
+            if user.secret_key and secret_key == user.secret_key:
+                secret_key_valid = True
+            elif secret_key == USER_SECRET_KEY or secret_key == GLOBAL_SECRET_KEY:
+                secret_key_valid = True
 
             if password_valid and secret_key_valid:
                 print("Login successful, setting session")
@@ -576,16 +595,22 @@ async def authenticate_user(request: Request):
                 users.select().where(users.c.username == username)
             ).fetchone()
 
-            # Validate secret key based on user role
+            # Validate secret key - check user's personal key, role defaults, or global key
             secret_key_valid = False
-            if user and user.role == "admin":
-                secret_key_valid = (
-                    secret_key == ADMIN_SECRET_KEY or secret_key == GLOBAL_SECRET_KEY
-                )
-            elif user and user.role == "user":
-                secret_key_valid = (
-                    secret_key == USER_SECRET_KEY or secret_key == GLOBAL_SECRET_KEY
-                )
+            if user:
+                # First check if user has their own secret key
+                if user.secret_key and secret_key == user.secret_key:
+                    secret_key_valid = True
+                # Then check role-based defaults and global key
+                elif user.role == "admin":
+                    secret_key_valid = (
+                        secret_key == ADMIN_SECRET_KEY
+                        or secret_key == GLOBAL_SECRET_KEY
+                    )
+                elif user.role == "user":
+                    secret_key_valid = (
+                        secret_key == USER_SECRET_KEY or secret_key == GLOBAL_SECRET_KEY
+                    )
 
             if user and user.password == password and secret_key_valid:
                 print(f"API authentication successful for user: {username}")
