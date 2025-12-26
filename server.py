@@ -74,96 +74,10 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # Set up templates
 templates = Jinja2Templates(directory="templates")
 
-# In-memory cache for rate limiting and login attempts
-# Structure: {username: {"attempts": count, "blocked_until": timestamp}}
-login_attempts_cache: Dict[str, Dict] = {}
-
-# In-memory cache for user data to speed up data retrieval
-# Structure: {username: {"profile": user_data, "copied_text": [], "submitted_text": [], "clipboard": [], "last_updated": timestamp}}
-user_data_cache: Dict[str, Dict] = {}
-CACHE_TTL = 300  # Cache time-to-live in seconds (5 minutes)
-
-
-def check_rate_limit(username: str) -> Tuple[bool, str]:
-    """Check if user is rate limited. Returns (is_blocked, message)"""
-    if username in login_attempts_cache:
-        user_data = login_attempts_cache[username]
-        blocked_until = user_data.get("blocked_until")
-
-        if blocked_until and datetime.now() < blocked_until:
-            remaining_time = (blocked_until - datetime.now()).total_seconds() / 60
-            return (
-                True,
-                f"Too many failed attempts. Try again in {int(remaining_time)} minutes.",
-            )
-        elif blocked_until and datetime.now() >= blocked_until:
-            # Reset after block period expires
-            login_attempts_cache[username] = {"attempts": 0, "blocked_until": None}
-
-    return False, ""
-
-
-def record_failed_attempt(username: str):
-    """Record a failed login attempt and apply rate limiting if needed"""
-    if username not in login_attempts_cache:
-        login_attempts_cache[username] = {"attempts": 0, "blocked_until": None}
-
-    login_attempts_cache[username]["attempts"] += 1
-
-    if login_attempts_cache[username]["attempts"] >= 10:
-        # Block for 30 minutes
-        login_attempts_cache[username]["blocked_until"] = datetime.now() + timedelta(
-            minutes=30
-        )
-        print(
-            f"User {username} has been blocked for 30 minutes due to too many failed attempts"
-        )
-
-
-def reset_attempts(username: str):
-    """Reset failed login attempts on successful login"""
-    if username in login_attempts_cache:
-        login_attempts_cache[username]["attempts"] = 0
-        login_attempts_cache[username]["blocked_until"] = None
-
 
 def validate_password_length(password: str) -> bool:
     """Validate that password is at least 6 characters"""
     return len(password) >= 6
-
-
-def get_cached_user_data(username: str, data_type: str):
-    """Get cached user data if available and not expired"""
-    if username in user_data_cache:
-        cache_entry = user_data_cache[username]
-        last_updated = cache_entry.get("last_updated", 0)
-
-        # Check if cache is still valid (not expired)
-        if time.time() - last_updated < CACHE_TTL:
-            return cache_entry.get(data_type)
-
-    return None
-
-
-def set_cached_user_data(username: str, data_type: str, data):
-    """Cache user data with timestamp"""
-    if username not in user_data_cache:
-        user_data_cache[username] = {"last_updated": time.time()}
-
-    user_data_cache[username][data_type] = data
-    user_data_cache[username]["last_updated"] = time.time()
-
-
-def invalidate_user_cache(username: str, data_type: str = None):
-    """Invalidate specific cache or all cache for a user"""
-    if username in user_data_cache:
-        if data_type:
-            # Remove specific data type from cache
-            if data_type in user_data_cache[username]:
-                del user_data_cache[username][data_type]
-        else:
-            # Remove entire user cache
-            del user_data_cache[username]
 
 
 # Database connection (Neon)
@@ -351,17 +265,8 @@ async def admin_login(request: Request):
 
     print(f"Admin login attempt - Username: {username}")
 
-    # Check rate limiting
-    is_blocked, block_message = check_rate_limit(username)
-    if is_blocked:
-        return templates.TemplateResponse(
-            "admin_login.html",
-            {"request": request, "error": block_message},
-        )
-
     # Validate password length
     if not validate_password_length(password):
-        record_failed_attempt(username)
         return templates.TemplateResponse(
             "admin_login.html",
             {"request": request, "error": "Invalid credentials"},
@@ -378,7 +283,6 @@ async def admin_login(request: Request):
 
             if password_valid:
                 print("Login successful, setting session")
-                reset_attempts(username)  # Reset failed attempts on success
                 request.session["user"] = {"username": username, "role": "admin"}
                 return templates.TemplateResponse(
                     "admin_dashboard.html",
@@ -386,14 +290,12 @@ async def admin_login(request: Request):
                 )
             else:
                 print("Login failed: Invalid username or password")
-                record_failed_attempt(username)
                 return templates.TemplateResponse(
                     "admin_login.html",
                     {"request": request, "error": "Invalid credentials"},
                 )
         else:
             print(f"Login failed: User '{username}' not found in database")
-            record_failed_attempt(username)
             return templates.TemplateResponse(
                 "admin_login.html",
                 {"request": request, "error": "Invalid credentials"},
@@ -673,24 +575,13 @@ async def user_login(request: Request):
             username = user.username
             print(f"User found - Username: {username}, Role: {user.role}")
 
-            # Check rate limiting for this username
-            is_blocked, block_message = check_rate_limit(username)
-            if is_blocked:
-                return templates.TemplateResponse(
-                    "user_login.html",
-                    {"request": request, "error": block_message},
-                )
-
             print("Login successful, setting session")
-            reset_attempts(username)  # Reset failed attempts on success
             request.session["user"] = {"username": username, "role": "user"}
             return templates.TemplateResponse(
                 "user_dashboard.html", {"request": request, "username": username}
             )
         else:
             print("Login failed: Invalid password")
-            # Record failed attempt with generic identifier for password-only login
-            record_failed_attempt(f"password_attempt_{hash(password) % 10000}")
             return templates.TemplateResponse(
                 "user_login.html",
                 {"request": request, "error": "Invalid credentials"},
@@ -748,20 +639,8 @@ async def authenticate_user(request: Request):
 
         print(f"API authenticate attempt - Username: {username}")
 
-        # Check rate limiting
-        is_blocked, block_message = check_rate_limit(username)
-        if is_blocked:
-            return JSONResponse(
-                content={
-                    "status": "error",
-                    "message": block_message,
-                },
-                status_code=429,
-            )
-
         # Validate password length
         if not validate_password_length(password):
-            record_failed_attempt(username)
             return JSONResponse(
                 content={
                     "status": "error",
@@ -778,7 +657,6 @@ async def authenticate_user(request: Request):
 
             if user and user.password == password:
                 print(f"API authentication successful for user: {username}")
-                reset_attempts(username)  # Reset failed attempts on success
                 return JSONResponse(
                     content={
                         "status": "success",
@@ -788,7 +666,6 @@ async def authenticate_user(request: Request):
                 )
             else:
                 print(f"API authentication failed for user: {username}")
-                record_failed_attempt(username)
                 return JSONResponse(
                     content={
                         "status": "error",
@@ -814,17 +691,6 @@ async def authenticate_user(request: Request):
 # API endpoint to fetch copied text history for a user (Text Viewer)
 @app.get("/api/copied_text_history/{username}")
 async def get_copied_text_history(username: str, request: Request = None):
-    # Try to get from cache first
-    cached_data = get_cached_user_data(username, "copied_text_history")
-    if cached_data is not None:
-        print(f"Returning cached copied text history for {username}")
-        return JSONResponse(
-            content={
-                "status": "success",
-                "copied_text_history": cached_data,
-            }
-        )
-
     db = SessionLocal()
     try:
         copied_text_items = db.execute(
@@ -833,14 +699,10 @@ async def get_copied_text_history(username: str, request: Request = None):
             .order_by(copied_text_history.c.id.desc())
         ).fetchall()
 
-        # Cache the result
-        history_list = [item.text for item in copied_text_items]
-        set_cached_user_data(username, "copied_text_history", history_list)
-
         return JSONResponse(
             content={
                 "status": "success",
-                "copied_text_history": history_list,
+                "copied_text_history": [item.text for item in copied_text_items],
             }
         )
     except Exception as e:
@@ -866,9 +728,6 @@ async def submit_to_clipboard(username: str, item: HistoryItem, request: Request
         # Store the text in clipboard_updates table
         db.execute(clipboard_updates.insert().values(username=username, text=item.text))
         db.commit()
-
-        # Invalidate clipboard cache
-        invalidate_user_cache(username, "clipboard_latest")
 
         # Enforce only the latest text (delete older entries)
         items = db.execute(
@@ -907,11 +766,6 @@ async def submit_to_clipboard(username: str, item: HistoryItem, request: Request
 # API endpoint to get the latest clipboard text (for polling)
 @app.get("/api/get_latest_clipboard/{username}")
 async def get_latest_clipboard(username: str):
-    # Try to get from cache first
-    cached_data = get_cached_user_data(username, "clipboard_latest")
-    if cached_data is not None:
-        return JSONResponse(content={"status": "success", "text": cached_data})
-
     db = SessionLocal()
     try:
         latest_item = db.execute(
@@ -920,13 +774,8 @@ async def get_latest_clipboard(username: str):
             .order_by(clipboard_updates.c.id.desc())
         ).first()
 
-        text = latest_item.text if latest_item else ""
-
-        # Cache the result
-        set_cached_user_data(username, "clipboard_latest", text)
-
         if latest_item:
-            return JSONResponse(content={"status": "success", "text": text})
+            return JSONResponse(content={"status": "success", "text": latest_item.text})
         return JSONResponse(content={"status": "success", "text": ""})
     except Exception as e:
         print(f"Error fetching latest clipboard text for {username}: {e}")
@@ -950,9 +799,6 @@ async def submit_copied_text(username: str, item: HistoryItem):
             copied_text_history.insert().values(username=username, text=item.text)
         )
         db.commit()
-
-        # Invalidate copied text cache
-        invalidate_user_cache(username, "copied_text_history")
 
         # Enforce max 10 copied text items
         items = db.execute(
@@ -998,8 +844,6 @@ async def delete_copied_text(username: str, item: HistoryItem, request: Request)
             .where(copied_text_history.c.text == item.text)
         )
         db.commit()
-        # Invalidate copied text cache
-        invalidate_user_cache(username, "copied_text_history")
 
         return JSONResponse(
             content={"status": "success", "message": "Copied text item deleted"}
@@ -1028,9 +872,6 @@ async def clear_copied_text(username: str, request: Request):
         )
         db.commit()
 
-        # Invalidate copied text cache
-        invalidate_user_cache(username, "copied_text_history")
-
         return JSONResponse(
             content={"status": "success", "message": "Copied text history cleared"}
         )
@@ -1050,17 +891,6 @@ async def get_submitted_text_history(username: str, request: Request):
     if "user" not in request.session or request.session["user"]["username"] != username:
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    # Try to get from cache first
-    cached_data = get_cached_user_data(username, "submitted_text_history")
-    if cached_data is not None:
-        print(f"Returning cached submitted text history for {username}")
-        return JSONResponse(
-            content={
-                "status": "success",
-                "submitted_text_history": cached_data,
-            }
-        )
-
     db = SessionLocal()
     try:
         submitted_text_items = db.execute(
@@ -1069,14 +899,10 @@ async def get_submitted_text_history(username: str, request: Request):
             .order_by(submitted_text_history.c.id.desc())
         ).fetchall()
 
-        # Cache the result
-        history_list = [item.text for item in submitted_text_items]
-        set_cached_user_data(username, "submitted_text_history", history_list)
-
         return JSONResponse(
             content={
                 "status": "success",
-                "submitted_text_history": history_list,
+                "submitted_text_history": [item.text for item in submitted_text_items],
             }
         )
     except Exception as e:
@@ -1103,9 +929,6 @@ async def submit_submitted_text(username: str, item: HistoryItem, request: Reque
             submitted_text_history.insert().values(username=username, text=item.text)
         )
         db.commit()
-
-        # Invalidate submitted text cache
-        invalidate_user_cache(username, "submitted_text_history")
 
         # Enforce max 10 submitted text items
         items = db.execute(
@@ -1152,9 +975,6 @@ async def delete_submitted_text(username: str, item: HistoryItem, request: Reque
         )
         db.commit()
 
-        # Invalidate submitted text cache
-        invalidate_user_cache(username, "submitted_text_history")
-
         return JSONResponse(
             content={"status": "success", "message": "Submitted text item deleted"}
         )
@@ -1182,9 +1002,6 @@ async def clear_submitted_text(username: str, request: Request):
         )
         db.commit()
 
-        # Invalidate submitted text cache
-        invalidate_user_cache(username, "submitted_text_history")
-
         return JSONResponse(
             content={"status": "success", "message": "Submitted text history cleared"}
         )
@@ -1201,45 +1018,3 @@ async def clear_submitted_text(username: str, request: Request):
 # Helper function to get all users for admin dashboard
 def get_all_users(db):
     return db.execute(users.select()).fetchall()
-
-
-# API endpoint to get cache statistics (for monitoring)
-@app.get("/api/cache/stats")
-async def get_cache_stats():
-    """Return cache statistics for monitoring"""
-    cache_stats = {
-        "total_cached_users": len(user_data_cache),
-        "cache_ttl_seconds": CACHE_TTL,
-        "users_in_cache": list(user_data_cache.keys()),
-        "cache_details": {},
-    }
-
-    # Get details for each cached user
-    for username, cache_data in user_data_cache.items():
-        cache_age = time.time() - cache_data.get("last_updated", 0)
-        cache_stats["cache_details"][username] = {
-            "cached_items": list(cache_data.keys()),
-            "age_seconds": round(cache_age, 2),
-            "expires_in_seconds": round(max(0, CACHE_TTL - cache_age), 2),
-            "is_valid": cache_age < CACHE_TTL,
-        }
-
-    return JSONResponse(content={"status": "success", "cache_stats": cache_stats})
-
-
-# API endpoint to clear all cache (admin only)
-@app.post("/api/cache/clear")
-async def clear_cache(request: Request):
-    """Clear all cache - useful for debugging"""
-    if request.session.get("user", {}).get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Not authorized")
-
-    user_data_cache.clear()
-    login_attempts_cache.clear()
-
-    return JSONResponse(
-        content={
-            "status": "success",
-            "message": "All cache cleared successfully",
-        }
-    )

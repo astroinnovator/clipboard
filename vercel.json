@@ -2,12 +2,8 @@
   "version": 2,
   "builds": [
     {
-      "src": "api/index.py",
+      "src": "server.py",
       "use": "@vercel/python"
-    },
-    {
-      "src": "static/**",
-      "use": "@vercel/static"
     }
   ],
   "routes": [
@@ -17,16 +13,7 @@
     },
     {
       "src": "/(.*)",
-      "dest": "api/index.py"
+      "dest": "server.py"
     }
-  ],
-  "env": {
-    "DATABASE_URL": "@database_url",
-    "CORS_ORIGINS": "@cors_origins",
-    "SESSION_SECRET_KEY": "@session_secret_key",
-    "DEFAULT_ADMIN_USERNAME": "@default_admin_username",
-    "DEFAULT_ADMIN_PASSWORD": "@default_admin_password",
-    "DEFAULT_USER_USERNAME": "@default_user_username",
-    "DEFAULT_USER_PASSWORD": "@default_user_password"
-  }
+  ]
 }
