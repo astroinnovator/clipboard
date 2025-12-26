@@ -3,7 +3,7 @@
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>User Login - Clipboard Manager</title>
+        <title>User Login - AssistX</title>
         <link
             href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap"
             rel="stylesheet"
@@ -13,7 +13,17 @@
     </head>
     <body>
         <header>
-            <h1>User Login</h1>
+            <div class="navbar">
+                <div class="navbar-brand">
+                    <h1>AssistX</h1>
+                </div>
+                <nav class="navbar-menu">
+                    <a href="/" class="nav-link">Home</a>
+                    <a href="/user/login" class="nav-link active">User Login</a>
+                    <a href="/admin" class="nav-link">Admin Login</a>
+                </nav>
+            </div>
+            <p>User Portal</p>
         </header>
 
         <main>
@@ -24,19 +34,15 @@
                         type="text"
                         name="username"
                         placeholder="Username"
-                        required
+                        autocomplete="off"
                     />
                     <input
                         type="password"
                         name="password"
                         placeholder="Password"
+                        minlength="6"
                         required
-                    />
-                    <input
-                        type="password"
-                        name="secret_key"
-                        placeholder="User Secret Key"
-                        required
+                        autofocus
                     />
                     <button type="submit">Login</button>
                 </form>
@@ -47,7 +53,7 @@
         </main>
 
         <footer>
-            <p>Made by Abhishek Sharma</p>
+            <p>&copy; 2024 AssistX</p>
         </footer>
     </body>
 </html>

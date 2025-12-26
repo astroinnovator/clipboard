@@ -1,24 +1,27 @@
 import os
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.templating import Jinja2Templates
+import time
+from datetime import datetime, timedelta
+from typing import Dict, Tuple
+
+from dotenv import load_dotenv
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.middleware.sessions import SessionMiddleware
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel, field_validator
 from sqlalchemy import (
-    create_engine,
     Column,
     Integer,
-    String,
     MetaData,
+    String,
     Table,
-    text,
+    create_engine,
     inspect,
+    text,
 )
 from sqlalchemy.orm import sessionmaker
-from pydantic import BaseModel
-from dotenv import load_dotenv
-
+from starlette.middleware.sessions import SessionMiddleware
 
 # Load environment variables
 load_dotenv()
@@ -46,15 +49,6 @@ if not SESSION_SECRET:
     raise ValueError("SESSION_SECRET_KEY environment variable must be set")
 app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET)
 
-# Get secret keys for additional verification - REQUIRED
-ADMIN_SECRET_KEY = os.getenv("ADMIN_SECRET_KEY")
-USER_SECRET_KEY = os.getenv("USER_SECRET_KEY")
-GLOBAL_SECRET_KEY = os.getenv("GLOBAL_SECRET_KEY")
-
-if not ADMIN_SECRET_KEY or not USER_SECRET_KEY or not GLOBAL_SECRET_KEY:
-    raise ValueError(
-        "ADMIN_SECRET_KEY, USER_SECRET_KEY, and GLOBAL_SECRET_KEY environment variables must be set"
-    )
 
 # Get default admin credentials from environment - REQUIRED
 DEFAULT_ADMIN_USERNAME = os.getenv("DEFAULT_ADMIN_USERNAME")
@@ -79,6 +73,98 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Set up templates
 templates = Jinja2Templates(directory="templates")
+
+# In-memory cache for rate limiting and login attempts
+# Structure: {username: {"attempts": count, "blocked_until": timestamp}}
+login_attempts_cache: Dict[str, Dict] = {}
+
+# In-memory cache for user data to speed up data retrieval
+# Structure: {username: {"profile": user_data, "copied_text": [], "submitted_text": [], "clipboard": [], "last_updated": timestamp}}
+user_data_cache: Dict[str, Dict] = {}
+CACHE_TTL = 300  # Cache time-to-live in seconds (5 minutes)
+
+
+def check_rate_limit(username: str) -> Tuple[bool, str]:
+    """Check if user is rate limited. Returns (is_blocked, message)"""
+    if username in login_attempts_cache:
+        user_data = login_attempts_cache[username]
+        blocked_until = user_data.get("blocked_until")
+
+        if blocked_until and datetime.now() < blocked_until:
+            remaining_time = (blocked_until - datetime.now()).total_seconds() / 60
+            return (
+                True,
+                f"Too many failed attempts. Try again in {int(remaining_time)} minutes.",
+            )
+        elif blocked_until and datetime.now() >= blocked_until:
+            # Reset after block period expires
+            login_attempts_cache[username] = {"attempts": 0, "blocked_until": None}
+
+    return False, ""
+
+
+def record_failed_attempt(username: str):
+    """Record a failed login attempt and apply rate limiting if needed"""
+    if username not in login_attempts_cache:
+        login_attempts_cache[username] = {"attempts": 0, "blocked_until": None}
+
+    login_attempts_cache[username]["attempts"] += 1
+
+    if login_attempts_cache[username]["attempts"] >= 10:
+        # Block for 30 minutes
+        login_attempts_cache[username]["blocked_until"] = datetime.now() + timedelta(
+            minutes=30
+        )
+        print(
+            f"User {username} has been blocked for 30 minutes due to too many failed attempts"
+        )
+
+
+def reset_attempts(username: str):
+    """Reset failed login attempts on successful login"""
+    if username in login_attempts_cache:
+        login_attempts_cache[username]["attempts"] = 0
+        login_attempts_cache[username]["blocked_until"] = None
+
+
+def validate_password_length(password: str) -> bool:
+    """Validate that password is at least 6 characters"""
+    return len(password) >= 6
+
+
+def get_cached_user_data(username: str, data_type: str):
+    """Get cached user data if available and not expired"""
+    if username in user_data_cache:
+        cache_entry = user_data_cache[username]
+        last_updated = cache_entry.get("last_updated", 0)
+
+        # Check if cache is still valid (not expired)
+        if time.time() - last_updated < CACHE_TTL:
+            return cache_entry.get(data_type)
+
+    return None
+
+
+def set_cached_user_data(username: str, data_type: str, data):
+    """Cache user data with timestamp"""
+    if username not in user_data_cache:
+        user_data_cache[username] = {"last_updated": time.time()}
+
+    user_data_cache[username][data_type] = data
+    user_data_cache[username]["last_updated"] = time.time()
+
+
+def invalidate_user_cache(username: str, data_type: str = None):
+    """Invalidate specific cache or all cache for a user"""
+    if username in user_data_cache:
+        if data_type:
+            # Remove specific data type from cache
+            if data_type in user_data_cache[username]:
+                del user_data_cache[username][data_type]
+        else:
+            # Remove entire user cache
+            del user_data_cache[username]
+
 
 # Database connection (Neon)
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -111,7 +197,6 @@ users = Table(
     Column("username", String(50), unique=True, nullable=False),
     Column("password", String(50), nullable=False),
     Column("role", String(10), nullable=False),
-    Column("secret_key", String(100), nullable=True),
 )
 
 copied_text_history = Table(
@@ -145,20 +230,18 @@ try:
     existing_tables = inspector.get_table_names()
 
     if "users" in existing_tables:
-        # Check if secret_key column exists
+        # Check if secret_key column exists and remove it
         columns = inspector.get_columns("users")
         column_names = [col["name"] for col in columns]
 
-        if "secret_key" not in column_names:
-            print("Adding secret_key column to existing users table...")
+        if "secret_key" in column_names:
+            print("Removing secret_key column from users table...")
             with engine.connect() as conn:
                 conn.execute(
-                    text(
-                        "ALTER TABLE users ADD COLUMN IF NOT EXISTS secret_key VARCHAR(100);"
-                    )
+                    text("ALTER TABLE users DROP COLUMN IF EXISTS secret_key;")
                 )
                 conn.commit()
-            print("secret_key column added successfully")
+            print("secret_key column removed successfully")
 
     # Create all tables (this will create new ones and skip existing ones)
     metadata.create_all(engine)
@@ -177,6 +260,20 @@ async def startup_event():
     db = SessionLocal()
     try:
         print("Starting database initialization")
+
+        # Validate default passwords meet minimum length requirement
+        if not validate_password_length(DEFAULT_ADMIN_PASSWORD):
+            print(f"ERROR: DEFAULT_ADMIN_PASSWORD must be at least 6 characters long!")
+            raise ValueError(
+                "DEFAULT_ADMIN_PASSWORD does not meet minimum length requirement"
+            )
+
+        if not validate_password_length(DEFAULT_USER_PASSWORD):
+            print(f"ERROR: DEFAULT_USER_PASSWORD must be at least 6 characters long!")
+            raise ValueError(
+                "DEFAULT_USER_PASSWORD does not meet minimum length requirement"
+            )
+
         # Default admin - WARNING: Change credentials in .env for production!
         if not db.execute(
             users.select().where(users.c.username == DEFAULT_ADMIN_USERNAME)
@@ -186,11 +283,10 @@ async def startup_event():
                     username=DEFAULT_ADMIN_USERNAME,
                     password=DEFAULT_ADMIN_PASSWORD,
                     role="admin",
-                    secret_key=ADMIN_SECRET_KEY,
                 )
             )
             print(
-                f"Default admin created: {DEFAULT_ADMIN_USERNAME}/{DEFAULT_ADMIN_PASSWORD}"
+                f"Default admin created: {DEFAULT_ADMIN_USERNAME} (password length: {len(DEFAULT_ADMIN_PASSWORD)} chars)"
             )
             print("WARNING: Change default admin password in .env file for production!")
         else:
@@ -205,11 +301,10 @@ async def startup_event():
                     username=DEFAULT_USER_USERNAME,
                     password=DEFAULT_USER_PASSWORD,
                     role="user",
-                    secret_key=USER_SECRET_KEY,
                 )
             )
             print(
-                f"Default user created: {DEFAULT_USER_USERNAME}/{DEFAULT_USER_PASSWORD}"
+                f"Default user created: {DEFAULT_USER_USERNAME} (password length: {len(DEFAULT_USER_PASSWORD)} chars)"
             )
             print("WARNING: Change default user password in .env file for production!")
         else:
@@ -217,15 +312,14 @@ async def startup_event():
 
         db.commit()
 
-        # Log all users to verify
+        # Log all users to verify (without showing passwords in production)
         all_users = db.execute(users.select()).fetchall()
         print("Users in database on startup:")
         for user in all_users:
-            print(
-                f"ID: {user.id}, Username: {user.username}, Password: {user.password}, Role: {user.role}"
-            )
+            print(f"ID: {user.id}, Username: {user.username}, Role: {user.role}")
     except Exception as e:
         print(f"Error during startup: {e}")
+        raise
     finally:
         db.close()
 
@@ -242,7 +336,7 @@ async def home(request: Request):
 
 
 @app.get("/admin", response_class=HTMLResponse)
-async def admin_login_page(request: Request, error: str = None):
+async def admin_login_page(request: Request, error: str | None = None):
     print("Serving admin login page")
     return templates.TemplateResponse(
         "admin_login.html", {"request": request, "error": error}
@@ -252,49 +346,57 @@ async def admin_login_page(request: Request, error: str = None):
 @app.post("/admin/login")
 async def admin_login(request: Request):
     form = await request.form()
-    username = form.get("username", "").strip()
-    password = form.get("password", "").strip()
-    secret_key = form.get("secret_key", "").strip()
+    username = (form.get("username") or "").strip()
+    password = (form.get("password") or "").strip()
 
-    print(f"Admin login attempt - Username: {username}, Password: {password}")
+    print(f"Admin login attempt - Username: {username}")
+
+    # Check rate limiting
+    is_blocked, block_message = check_rate_limit(username)
+    if is_blocked:
+        return templates.TemplateResponse(
+            "admin_login.html",
+            {"request": request, "error": block_message},
+        )
+
+    # Validate password length
+    if not validate_password_length(password):
+        record_failed_attempt(username)
+        return templates.TemplateResponse(
+            "admin_login.html",
+            {"request": request, "error": "Invalid credentials"},
+        )
 
     db = SessionLocal()
     try:
         user = db.execute(users.select().where(users.c.username == username)).fetchone()
         if user:
-            print(
-                f"User found - Username: {user.username}, Password: {user.password}, Role: {user.role}"
-            )
-            print(f"Comparing password: Input '{password}' vs Stored '{user.password}'")
+            print(f"User found - Username: {user.username}, Role: {user.role}")
 
-            # Check password, role, and secret key
+            # Check password and role (no secret key required)
             password_valid = user.password == password and user.role == "admin"
 
-            # Validate secret key - check user's personal key, role defaults, or global key
-            secret_key_valid = False
-            if user.secret_key and secret_key == user.secret_key:
-                secret_key_valid = True
-            elif secret_key == ADMIN_SECRET_KEY or secret_key == GLOBAL_SECRET_KEY:
-                secret_key_valid = True
-
-            if password_valid and secret_key_valid:
+            if password_valid:
                 print("Login successful, setting session")
+                reset_attempts(username)  # Reset failed attempts on success
                 request.session["user"] = {"username": username, "role": "admin"}
                 return templates.TemplateResponse(
                     "admin_dashboard.html",
                     {"request": request, "users": get_all_users(db)},
                 )
             else:
-                print("Login failed: Password, role, or secret key mismatch")
+                print("Login failed: Invalid username or password")
+                record_failed_attempt(username)
                 return templates.TemplateResponse(
                     "admin_login.html",
-                    {"request": request, "error": "Invalid credentials or secret key"},
+                    {"request": request, "error": "Invalid credentials"},
                 )
         else:
             print(f"Login failed: User '{username}' not found in database")
+            record_failed_attempt(username)
             return templates.TemplateResponse(
                 "admin_login.html",
-                {"request": request, "error": "Invalid credentials or secret key"},
+                {"request": request, "error": "Invalid credentials"},
             )
     except Exception as e:
         print(f"Error during admin login: {e}")
@@ -322,6 +424,13 @@ async def admin_dashboard(request: Request):
         db.close()
 
 
+@app.get("/admin/logout")
+async def admin_logout(request: Request):
+    """Admin logout - clear session and redirect to admin login"""
+    request.session.clear()
+    return RedirectResponse(url="/admin", status_code=303)
+
+
 @app.post("/admin/add_user")
 async def add_user(request: Request):
     if request.session.get("user", {}).get("role") != "admin":
@@ -329,12 +438,22 @@ async def add_user(request: Request):
         raise HTTPException(status_code=403, detail="Not authorized")
 
     form = await request.form()
-    username = form.get("username", "").strip()
-    password = form.get("password", "").strip()
-    role = form.get("role", "").strip()
-    secret_key = form.get("secret_key", "").strip()
+    username = (form.get("username") or "").strip()
+    password = (form.get("password") or "").strip()
+    role = (form.get("role") or "").strip()
 
-    print(f"Adding new user - Username: {username}, Password: {password}, Role: {role}")
+    print(f"Adding new user - Username: {username}, Role: {role}")
+
+    # Validate password length
+    if not validate_password_length(password):
+        return templates.TemplateResponse(
+            "admin_dashboard.html",
+            {
+                "request": request,
+                "users": get_all_users(SessionLocal()),
+                "message": "Password must be at least 6 characters",
+            },
+        )
 
     db = SessionLocal()
     try:
@@ -352,9 +471,7 @@ async def add_user(request: Request):
 
         # Insert the new user
         db.execute(
-            users.insert().values(
-                username=username, password=password, role=role, secret_key=secret_key
-            )
+            users.insert().values(username=username, password=password, role=role)
         )
         db.commit()
         print("User added successfully")
@@ -387,14 +504,22 @@ async def update_user(request: Request):
         raise HTTPException(status_code=403, detail="Not authorized")
 
     form = await request.form()
-    user_id = form.get("user_id", "")
-    new_username = form.get("username", "").strip()
-    new_password = form.get("password", "").strip()
-    new_secret_key = form.get("secret_key", "").strip()
+    user_id = form.get("user_id") or ""
+    new_username = (form.get("username") or "").strip()
+    new_password = (form.get("password") or "").strip()
 
-    print(
-        f"Updating user - ID: {user_id}, New Username: {new_username}, New Password: {new_password}"
-    )
+    print(f"Updating user - ID: {user_id}, New Username: {new_username}")
+
+    # Validate password length if password is being updated
+    if new_password and not validate_password_length(new_password):
+        return templates.TemplateResponse(
+            "admin_dashboard.html",
+            {
+                "request": request,
+                "users": get_all_users(SessionLocal()),
+                "message": "Password must be at least 6 characters",
+            },
+        )
 
     db = SessionLocal()
     try:
@@ -419,10 +544,6 @@ async def update_user(request: Request):
         update_values = {"username": new_username}
         if new_password:  # Only update password if a new one is provided
             update_values["password"] = new_password
-        if new_secret_key:  # Only update secret key if provided
-            update_values["secret_key"] = new_secret_key
-        elif new_secret_key == "":  # Allow clearing secret key with empty string
-            update_values["secret_key"] = None
         db.execute(users.update().where(users.c.id == user_id).values(**update_values))
         db.commit()
         print("User updated successfully")
@@ -455,7 +576,7 @@ async def delete_user(request: Request):
         raise HTTPException(status_code=403, detail="Not authorized")
 
     form = await request.form()
-    user_id = form.get("user_id", "")
+    user_id = form.get("user_id") or ""
     current_user = request.session.get("user", {}).get("username")
 
     print(f"Deleting user - ID: {user_id}")
@@ -518,7 +639,7 @@ async def delete_user(request: Request):
 
 
 @app.get("/user/login", response_class=HTMLResponse)
-async def user_login_page(request: Request, error: str = None):
+async def user_login_page(request: Request, error: str | None = None):
     print("Serving user login page")
     return templates.TemplateResponse(
         "user_login.html", {"request": request, "error": error}
@@ -528,48 +649,51 @@ async def user_login_page(request: Request, error: str = None):
 @app.post("/user/login")
 async def user_login(request: Request):
     form = await request.form()
-    username = form.get("username", "").strip()
-    password = form.get("password", "").strip()
-    secret_key = form.get("secret_key", "").strip()
+    password = (form.get("password") or "").strip()
 
-    print(f"User login attempt - Username: {username}, Password: {password}")
+    print(f"User login attempt with password")
+
+    # Validate password length first (but show generic error)
+    if not validate_password_length(password):
+        return templates.TemplateResponse(
+            "user_login.html",
+            {"request": request, "error": "Invalid credentials"},
+        )
 
     db = SessionLocal()
     try:
-        user = db.execute(users.select().where(users.c.username == username)).fetchone()
+        # Find user by password match (user role only)
+        user = db.execute(
+            users.select()
+            .where(users.c.password == password)
+            .where(users.c.role == "user")
+        ).fetchone()
+
         if user:
-            print(
-                f"User found - Username: {user.username}, Password: {user.password}, Role: {user.role}"
-            )
-            print(f"Comparing password: Input '{password}' vs Stored '{user.password}'")
+            username = user.username
+            print(f"User found - Username: {username}, Role: {user.role}")
 
-            # Check password, role, and secret key
-            password_valid = user.password == password and user.role == "user"
-
-            # Validate secret key - check user's personal key, role defaults, or global key
-            secret_key_valid = False
-            if user.secret_key and secret_key == user.secret_key:
-                secret_key_valid = True
-            elif secret_key == USER_SECRET_KEY or secret_key == GLOBAL_SECRET_KEY:
-                secret_key_valid = True
-
-            if password_valid and secret_key_valid:
-                print("Login successful, setting session")
-                request.session["user"] = {"username": username, "role": "user"}
-                return templates.TemplateResponse(
-                    "user_dashboard.html", {"request": request}
-                )
-            else:
-                print("Login failed: Password, role, or secret key mismatch")
+            # Check rate limiting for this username
+            is_blocked, block_message = check_rate_limit(username)
+            if is_blocked:
                 return templates.TemplateResponse(
                     "user_login.html",
-                    {"request": request, "error": "Invalid credentials or secret key"},
+                    {"request": request, "error": block_message},
                 )
+
+            print("Login successful, setting session")
+            reset_attempts(username)  # Reset failed attempts on success
+            request.session["user"] = {"username": username, "role": "user"}
+            return templates.TemplateResponse(
+                "user_dashboard.html", {"request": request, "username": username}
+            )
         else:
-            print(f"Login failed: User '{username}' not found in database")
+            print("Login failed: Invalid password")
+            # Record failed attempt with generic identifier for password-only login
+            record_failed_attempt(f"password_attempt_{hash(password) % 10000}")
             return templates.TemplateResponse(
                 "user_login.html",
-                {"request": request, "error": "Invalid credentials or secret key"},
+                {"request": request, "error": "Invalid credentials"},
             )
     except Exception as e:
         print(f"Error during user login: {e}")
@@ -593,6 +717,13 @@ async def user_dashboard(request: Request):
     )
 
 
+@app.get("/user/logout")
+async def user_logout(request: Request):
+    """User logout - clear session and redirect to user login"""
+    request.session.clear()
+    return RedirectResponse(url="/user/login", status_code=303)
+
+
 # API endpoint to authenticate users (for the desktop app)
 @app.post("/api/authenticate")
 async def authenticate_user(request: Request):
@@ -601,23 +732,43 @@ async def authenticate_user(request: Request):
         print(f"Received form data: {dict(form)}")
         username = form.get("username")
         password = form.get("password")
-        secret_key = form.get("secret_key")
 
-        if not username or not password or not secret_key:
-            print("Missing username, password, or secret key in form data")
+        if not username or not password:
+            print("Missing username or password in form data")
             return JSONResponse(
                 content={
                     "status": "error",
-                    "message": "Missing username, password, or secret key",
+                    "message": "Missing username or password",
                 },
                 status_code=400,
             )
 
         username = username.strip()
         password = password.strip()
-        secret_key = secret_key.strip()
 
-        print(f"API authenticate attempt - Username: {username}, Password: {password}")
+        print(f"API authenticate attempt - Username: {username}")
+
+        # Check rate limiting
+        is_blocked, block_message = check_rate_limit(username)
+        if is_blocked:
+            return JSONResponse(
+                content={
+                    "status": "error",
+                    "message": block_message,
+                },
+                status_code=429,
+            )
+
+        # Validate password length
+        if not validate_password_length(password):
+            record_failed_attempt(username)
+            return JSONResponse(
+                content={
+                    "status": "error",
+                    "message": "Invalid credentials",
+                },
+                status_code=401,
+            )
 
         db = SessionLocal()
         try:
@@ -625,25 +776,9 @@ async def authenticate_user(request: Request):
                 users.select().where(users.c.username == username)
             ).fetchone()
 
-            # Validate secret key - check user's personal key, role defaults, or global key
-            secret_key_valid = False
-            if user:
-                # First check if user has their own secret key
-                if user.secret_key and secret_key == user.secret_key:
-                    secret_key_valid = True
-                # Then check role-based defaults and global key
-                elif user.role == "admin":
-                    secret_key_valid = (
-                        secret_key == ADMIN_SECRET_KEY
-                        or secret_key == GLOBAL_SECRET_KEY
-                    )
-                elif user.role == "user":
-                    secret_key_valid = (
-                        secret_key == USER_SECRET_KEY or secret_key == GLOBAL_SECRET_KEY
-                    )
-
-            if user and user.password == password and secret_key_valid:
+            if user and user.password == password:
                 print(f"API authentication successful for user: {username}")
+                reset_attempts(username)  # Reset failed attempts on success
                 return JSONResponse(
                     content={
                         "status": "success",
@@ -653,10 +788,11 @@ async def authenticate_user(request: Request):
                 )
             else:
                 print(f"API authentication failed for user: {username}")
+                record_failed_attempt(username)
                 return JSONResponse(
                     content={
                         "status": "error",
-                        "message": "Invalid username, password, or secret key",
+                        "message": "Invalid credentials",
                     },
                     status_code=401,
                 )
@@ -678,6 +814,17 @@ async def authenticate_user(request: Request):
 # API endpoint to fetch copied text history for a user (Text Viewer)
 @app.get("/api/copied_text_history/{username}")
 async def get_copied_text_history(username: str, request: Request = None):
+    # Try to get from cache first
+    cached_data = get_cached_user_data(username, "copied_text_history")
+    if cached_data is not None:
+        print(f"Returning cached copied text history for {username}")
+        return JSONResponse(
+            content={
+                "status": "success",
+                "copied_text_history": cached_data,
+            }
+        )
+
     db = SessionLocal()
     try:
         copied_text_items = db.execute(
@@ -685,10 +832,15 @@ async def get_copied_text_history(username: str, request: Request = None):
             .where(copied_text_history.c.username == username)
             .order_by(copied_text_history.c.id.desc())
         ).fetchall()
+
+        # Cache the result
+        history_list = [item.text for item in copied_text_items]
+        set_cached_user_data(username, "copied_text_history", history_list)
+
         return JSONResponse(
             content={
                 "status": "success",
-                "copied_text_history": [item.text for item in copied_text_items],
+                "copied_text_history": history_list,
             }
         )
     except Exception as e:
@@ -714,6 +866,10 @@ async def submit_to_clipboard(username: str, item: HistoryItem, request: Request
         # Store the text in clipboard_updates table
         db.execute(clipboard_updates.insert().values(username=username, text=item.text))
         db.commit()
+
+        # Invalidate clipboard cache
+        invalidate_user_cache(username, "clipboard_latest")
+
         # Enforce only the latest text (delete older entries)
         items = db.execute(
             clipboard_updates.select()
@@ -751,6 +907,11 @@ async def submit_to_clipboard(username: str, item: HistoryItem, request: Request
 # API endpoint to get the latest clipboard text (for polling)
 @app.get("/api/get_latest_clipboard/{username}")
 async def get_latest_clipboard(username: str):
+    # Try to get from cache first
+    cached_data = get_cached_user_data(username, "clipboard_latest")
+    if cached_data is not None:
+        return JSONResponse(content={"status": "success", "text": cached_data})
+
     db = SessionLocal()
     try:
         latest_item = db.execute(
@@ -758,8 +919,14 @@ async def get_latest_clipboard(username: str):
             .where(clipboard_updates.c.username == username)
             .order_by(clipboard_updates.c.id.desc())
         ).first()
+
+        text = latest_item.text if latest_item else ""
+
+        # Cache the result
+        set_cached_user_data(username, "clipboard_latest", text)
+
         if latest_item:
-            return JSONResponse(content={"status": "success", "text": latest_item.text})
+            return JSONResponse(content={"status": "success", "text": text})
         return JSONResponse(content={"status": "success", "text": ""})
     except Exception as e:
         print(f"Error fetching latest clipboard text for {username}: {e}")
@@ -783,6 +950,10 @@ async def submit_copied_text(username: str, item: HistoryItem):
             copied_text_history.insert().values(username=username, text=item.text)
         )
         db.commit()
+
+        # Invalidate copied text cache
+        invalidate_user_cache(username, "copied_text_history")
+
         # Enforce max 10 copied text items
         items = db.execute(
             copied_text_history.select()
@@ -827,6 +998,9 @@ async def delete_copied_text(username: str, item: HistoryItem, request: Request)
             .where(copied_text_history.c.text == item.text)
         )
         db.commit()
+        # Invalidate copied text cache
+        invalidate_user_cache(username, "copied_text_history")
+
         return JSONResponse(
             content={"status": "success", "message": "Copied text item deleted"}
         )
@@ -853,6 +1027,10 @@ async def clear_copied_text(username: str, request: Request):
             )
         )
         db.commit()
+
+        # Invalidate copied text cache
+        invalidate_user_cache(username, "copied_text_history")
+
         return JSONResponse(
             content={"status": "success", "message": "Copied text history cleared"}
         )
@@ -871,6 +1049,18 @@ async def clear_copied_text(username: str, request: Request):
 async def get_submitted_text_history(username: str, request: Request):
     if "user" not in request.session or request.session["user"]["username"] != username:
         raise HTTPException(status_code=403, detail="Not authorized")
+
+    # Try to get from cache first
+    cached_data = get_cached_user_data(username, "submitted_text_history")
+    if cached_data is not None:
+        print(f"Returning cached submitted text history for {username}")
+        return JSONResponse(
+            content={
+                "status": "success",
+                "submitted_text_history": cached_data,
+            }
+        )
+
     db = SessionLocal()
     try:
         submitted_text_items = db.execute(
@@ -878,10 +1068,15 @@ async def get_submitted_text_history(username: str, request: Request):
             .where(submitted_text_history.c.username == username)
             .order_by(submitted_text_history.c.id.desc())
         ).fetchall()
+
+        # Cache the result
+        history_list = [item.text for item in submitted_text_items]
+        set_cached_user_data(username, "submitted_text_history", history_list)
+
         return JSONResponse(
             content={
                 "status": "success",
-                "submitted_text_history": [item.text for item in submitted_text_items],
+                "submitted_text_history": history_list,
             }
         )
     except Exception as e:
@@ -908,6 +1103,10 @@ async def submit_submitted_text(username: str, item: HistoryItem, request: Reque
             submitted_text_history.insert().values(username=username, text=item.text)
         )
         db.commit()
+
+        # Invalidate submitted text cache
+        invalidate_user_cache(username, "submitted_text_history")
+
         # Enforce max 10 submitted text items
         items = db.execute(
             submitted_text_history.select()
@@ -927,7 +1126,7 @@ async def submit_submitted_text(username: str, item: HistoryItem, request: Reque
             )
             db.commit()
         return JSONResponse(
-            content={"status": "success", "message": "Submitted text added to history"}
+            content={"status": "success", "message": "Submitted text saved"}
         )
     except Exception as e:
         print(f"Error submitting submitted text for {username}: {e}")
@@ -952,6 +1151,10 @@ async def delete_submitted_text(username: str, item: HistoryItem, request: Reque
             .where(submitted_text_history.c.text == item.text)
         )
         db.commit()
+
+        # Invalidate submitted text cache
+        invalidate_user_cache(username, "submitted_text_history")
+
         return JSONResponse(
             content={"status": "success", "message": "Submitted text item deleted"}
         )
@@ -965,7 +1168,7 @@ async def delete_submitted_text(username: str, item: HistoryItem, request: Reque
         db.close()
 
 
-# API endpoint to clear submitted text
+# API endpoint to clear submitted text history
 @app.post("/api/clear_submitted_text/{username}")
 async def clear_submitted_text(username: str, request: Request):
     if "user" not in request.session or request.session["user"]["username"] != username:
@@ -978,6 +1181,10 @@ async def clear_submitted_text(username: str, request: Request):
             )
         )
         db.commit()
+
+        # Invalidate submitted text cache
+        invalidate_user_cache(username, "submitted_text_history")
+
         return JSONResponse(
             content={"status": "success", "message": "Submitted text history cleared"}
         )
@@ -994,3 +1201,45 @@ async def clear_submitted_text(username: str, request: Request):
 # Helper function to get all users for admin dashboard
 def get_all_users(db):
     return db.execute(users.select()).fetchall()
+
+
+# API endpoint to get cache statistics (for monitoring)
+@app.get("/api/cache/stats")
+async def get_cache_stats():
+    """Return cache statistics for monitoring"""
+    cache_stats = {
+        "total_cached_users": len(user_data_cache),
+        "cache_ttl_seconds": CACHE_TTL,
+        "users_in_cache": list(user_data_cache.keys()),
+        "cache_details": {},
+    }
+
+    # Get details for each cached user
+    for username, cache_data in user_data_cache.items():
+        cache_age = time.time() - cache_data.get("last_updated", 0)
+        cache_stats["cache_details"][username] = {
+            "cached_items": list(cache_data.keys()),
+            "age_seconds": round(cache_age, 2),
+            "expires_in_seconds": round(max(0, CACHE_TTL - cache_age), 2),
+            "is_valid": cache_age < CACHE_TTL,
+        }
+
+    return JSONResponse(content={"status": "success", "cache_stats": cache_stats})
+
+
+# API endpoint to clear all cache (admin only)
+@app.post("/api/cache/clear")
+async def clear_cache(request: Request):
+    """Clear all cache - useful for debugging"""
+    if request.session.get("user", {}).get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    user_data_cache.clear()
+    login_attempts_cache.clear()
+
+    return JSONResponse(
+        content={
+            "status": "success",
+            "message": "All cache cleared successfully",
+        }
+    )
