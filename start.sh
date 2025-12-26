@@ -1,5 +1,7 @@
 #!/bin/bash
 
+#fix
+
 set -e
 
 echo "🚀 Starting Clipboard Management System on Render"
