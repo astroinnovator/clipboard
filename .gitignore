@@ -165,3 +165,4 @@ tmp/
 # Logs
 *.log
 logs/
+.vercel
