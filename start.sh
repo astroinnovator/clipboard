@@ -1,8 +1,5 @@
 #!/bin/bash
 
-# Render Startup Script for Clipboard Management System
-# This script prepares and starts the FastAPI application on Render
-
 set -e
 
 echo "🚀 Starting Clipboard Management System on Render"
