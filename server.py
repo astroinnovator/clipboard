@@ -1,12 +1,13 @@
 import os
 import time
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Dict, Tuple
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, field_validator
@@ -68,8 +69,66 @@ if not DEFAULT_USER_USERNAME or not DEFAULT_USER_PASSWORD:
         "DEFAULT_USER_USERNAME and DEFAULT_USER_PASSWORD environment variables must be set"
     )
 
-# Serve static files
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# Get the base directory
+BASE_DIR = Path(__file__).resolve().parent
+STATIC_DIR = BASE_DIR / "static"
+
+
+# Serve static files with custom routes for Vercel compatibility
+@app.get("/static/css/{file_path:path}")
+async def serve_css(file_path: str):
+    """Serve CSS files"""
+    file_location = STATIC_DIR / "css" / file_path
+    if file_location.exists() and file_location.is_file():
+        return FileResponse(file_location, media_type="text/css")
+    raise HTTPException(status_code=404, detail="CSS file not found")
+
+
+@app.get("/static/js/{file_path:path}")
+async def serve_js(file_path: str):
+    """Serve JavaScript files"""
+    file_location = STATIC_DIR / "js" / file_path
+    if file_location.exists() and file_location.is_file():
+        return FileResponse(file_location, media_type="application/javascript")
+    raise HTTPException(status_code=404, detail="JS file not found")
+
+
+@app.get("/static/img/{file_path:path}")
+async def serve_img(file_path: str):
+    """Serve image files"""
+    file_location = STATIC_DIR / "img" / file_path
+    if file_location.exists() and file_location.is_file():
+        # Determine media type based on extension
+        ext = file_path.lower().split(".")[-1]
+        media_types = {
+            "png": "image/png",
+            "jpg": "image/jpeg",
+            "jpeg": "image/jpeg",
+            "gif": "image/gif",
+            "svg": "image/svg+xml",
+            "ico": "image/x-icon",
+            "webp": "image/webp",
+        }
+        media_type = media_types.get(ext, "application/octet-stream")
+        return FileResponse(file_location, media_type=media_type)
+    raise HTTPException(status_code=404, detail="Image file not found")
+
+
+@app.get("/static/{file_path:path}")
+async def serve_static(file_path: str):
+    """Serve other static files (favicon, etc.)"""
+    file_location = STATIC_DIR / file_path
+    if file_location.exists() and file_location.is_file():
+        return FileResponse(file_location)
+    raise HTTPException(status_code=404, detail="Static file not found")
+
+
+# Fallback: Mount static files for local development
+try:
+    app.mount("/static", StaticFiles(directory="static"), name="static")
+except Exception:
+    # StaticFiles mount may fail on Vercel, but custom routes above will work
+    pass
 
 # Set up templates
 templates = Jinja2Templates(directory="templates")

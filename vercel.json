@@ -8,12 +8,13 @@
   ],
   "routes": [
     {
-      "src": "/static/(.*)",
-      "dest": "/static/$1"
-    },
-    {
       "src": "/(.*)",
       "dest": "server.py"
     }
-  ]
+  ],
+  "functions": {
+    "server.py": {
+      "includeFiles": "{static/**,templates/**}"
+    }
+  }
 }

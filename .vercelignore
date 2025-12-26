@@ -1,0 +1,53 @@
+# Vercel ignore file - specify what NOT to deploy
+
+# Development files
+.env.local
+.env.*.local
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+README.md
+*.md
+
+# Development scripts
+clip_keyboard.py
+clipboard_manager.py
+migrate_db.py
+start.sh
+
+# Logs
+*.log
+logs/
+
+# DO NOT ignore these - they are needed for production:
+# !static/
+# !templates/
+# !server.py
+# !requirements.txt
+# !vercel.json
+# !runtime.txt
