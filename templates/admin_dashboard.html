@@ -4,7 +4,566 @@
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>Admin Dashboard - AssistX</title>
+        <link
+            href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+            rel="stylesheet"
+        />
+        <link rel="icon" href="/static/favicon.ico" />
         <link rel="stylesheet" href="/static/css/styles.css" />
+        <style>
+            body {
+                margin: 0;
+                font-family: "Inter", sans-serif;
+                background: linear-gradient(135deg, #0f1120 0%, #1a1e35 100%);
+                color: #e0e0e0;
+                min-height: 100vh;
+            }
+            .stats-row {
+                display: flex;
+                gap: 14px;
+                flex-wrap: wrap;
+                margin-bottom: 28px;
+            }
+            .stat-card {
+                flex: 1;
+                min-width: 130px;
+                background: linear-gradient(
+                    145deg,
+                    rgba(30, 35, 55, 0.85),
+                    rgba(20, 24, 40, 0.95)
+                );
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                border-radius: 14px;
+                padding: 18px 20px;
+                text-align: center;
+            }
+            .stat-card:hover {
+                border-color: rgba(255, 255, 255, 0.18);
+                transform: translateY(-2px);
+            }
+            .stat-card .stat-value {
+                font-size: 2rem;
+                font-weight: 700;
+                color: #fff;
+                line-height: 1.1;
+                margin-bottom: 4px;
+                background: linear-gradient(90deg, #a78bfa, #818cf8);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+            }
+            .stat-card .stat-label {
+                font-size: 0.8rem;
+                color: #888;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                font-weight: 500;
+            }
+            .stat-card.danger .stat-value {
+                background: linear-gradient(90deg, #f87171, #ef4444);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+            }
+            .stat-card.success .stat-value {
+                background: linear-gradient(90deg, #34d399, #10b981);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+            }
+
+            .section-title {
+                font-size: 1.1rem;
+                font-weight: 600;
+                color: #c0c0d0;
+                margin-bottom: 14px;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+            .section-title .icon {
+                font-size: 1.3rem;
+            }
+
+            .add-user-card {
+                background: linear-gradient(
+                    145deg,
+                    rgba(30, 35, 55, 0.85),
+                    rgba(20, 24, 40, 0.95)
+                );
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                border-radius: 14px;
+                padding: 22px 24px;
+                margin-bottom: 28px;
+            }
+            .add-user-card form {
+                display: flex;
+                gap: 14px;
+                align-items: flex-end;
+                flex-wrap: wrap;
+            }
+            .add-user-card .field {
+                display: flex;
+                flex-direction: column;
+                flex: 1;
+                min-width: 160px;
+            }
+            .add-user-card .field label {
+                font-size: 0.78rem;
+                color: #888;
+                text-transform: uppercase;
+                letter-spacing: 0.4px;
+                margin-bottom: 6px;
+            }
+            .add-user-card input,
+            .add-user-card select {
+                background: rgba(15, 17, 32, 0.8);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 8px;
+                padding: 10px 14px;
+                color: #fff;
+                font-size: 0.9rem;
+                font-family: inherit;
+                transition: border-color 0.2s;
+                outline: none;
+                width: 100%;
+                box-sizing: border-box;
+            }
+            .add-user-card input::placeholder {
+                color: #555;
+            }
+            .add-user-card input:focus,
+            .add-user-card select:focus {
+                border-color: #818cf8;
+                box-shadow: 0 0 0 2px rgba(129, 140, 248, 0.15);
+            }
+            .add-user-card select option {
+                background: #1a1e35;
+                color: #fff;
+            }
+            .add-user-card button[type="submit"] {
+                background: linear-gradient(135deg, #818cf8, #6366f1);
+                color: #fff;
+                border: none;
+                border-radius: 8px;
+                padding: 10px 22px;
+                font-size: 0.9rem;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.2s;
+                white-space: nowrap;
+                font-family: inherit;
+                box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+            }
+            .add-user-card button[type="submit"]:hover {
+                transform: translateY(-1px);
+                box-shadow: 0 6px 16px rgba(99, 102, 241, 0.4);
+            }
+
+            .table-wrapper {
+                overflow-x: auto;
+                border-radius: 14px;
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                background: rgba(20, 24, 40, 0.6);
+                margin-bottom: 28px;
+            }
+            .user-table {
+                width: 100%;
+                border-collapse: collapse;
+                font-size: 0.88rem;
+            }
+            .user-table thead th {
+                background: rgba(15, 17, 32, 0.9);
+                padding: 12px 16px;
+                text-align: left;
+                font-weight: 600;
+                color: #999;
+                text-transform: uppercase;
+                font-size: 0.72rem;
+                letter-spacing: 0.6px;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+                white-space: nowrap;
+            }
+            .user-table tbody td {
+                padding: 12px 16px;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+                vertical-align: middle;
+                white-space: nowrap;
+            }
+            .user-table tbody tr {
+                transition: background 0.15s;
+            }
+            .user-table tbody tr:hover {
+                background: rgba(129, 140, 248, 0.04);
+            }
+
+            .badge {
+                display: inline-block;
+                padding: 3px 10px;
+                border-radius: 20px;
+                font-size: 0.72rem;
+                font-weight: 600;
+                text-transform: uppercase;
+                letter-spacing: 0.4px;
+            }
+            .badge-admin {
+                background: rgba(168, 85, 247, 0.15);
+                color: #c084fc;
+                border: 1px solid rgba(168, 85, 247, 0.3);
+            }
+            .badge-user {
+                background: rgba(59, 130, 246, 0.12);
+                color: #60a5fa;
+                border: 1px solid rgba(59, 130, 246, 0.25);
+            }
+            .badge-active {
+                background: rgba(34, 197, 94, 0.12);
+                color: #4ade80;
+                border: 1px solid rgba(34, 197, 94, 0.25);
+            }
+            .badge-banned {
+                background: rgba(239, 68, 68, 0.12);
+                color: #f87171;
+                border: 1px solid rgba(239, 68, 68, 0.25);
+            }
+
+            .actions {
+                display: flex;
+                gap: 6px;
+                align-items: center;
+                flex-wrap: wrap;
+            }
+            .btn {
+                display: inline-flex;
+                align-items: center;
+                gap: 4px;
+                padding: 5px 12px;
+                border-radius: 6px;
+                font-size: 0.78rem;
+                font-weight: 500;
+                cursor: pointer;
+                transition: all 0.15s;
+                border: 1px solid transparent;
+                font-family: inherit;
+                white-space: nowrap;
+            }
+            .btn:hover {
+                transform: translateY(-1px);
+            }
+            .btn:active {
+                transform: translateY(0);
+            }
+            .btn-edit {
+                background: rgba(59, 130, 246, 0.12);
+                color: #60a5fa;
+                border-color: rgba(59, 130, 246, 0.25);
+            }
+            .btn-edit:hover {
+                background: rgba(59, 130, 246, 0.22);
+            }
+            .btn-ban {
+                background: rgba(245, 158, 11, 0.12);
+                color: #fbbf24;
+                border-color: rgba(245, 158, 11, 0.25);
+            }
+            .btn-ban:hover {
+                background: rgba(245, 158, 11, 0.22);
+            }
+            .btn-unban {
+                background: rgba(34, 197, 94, 0.12);
+                color: #4ade80;
+                border-color: rgba(34, 197, 94, 0.25);
+            }
+            .btn-unban:hover {
+                background: rgba(34, 197, 94, 0.22);
+            }
+            .btn-delete {
+                background: rgba(239, 68, 68, 0.12);
+                color: #f87171;
+                border-color: rgba(239, 68, 68, 0.25);
+            }
+            .btn-delete:hover {
+                background: rgba(239, 68, 68, 0.22);
+            }
+
+            .toast {
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: linear-gradient(
+                    135deg,
+                    rgba(99, 102, 241, 0.95),
+                    rgba(129, 140, 248, 0.95)
+                );
+                color: #fff;
+                padding: 14px 24px;
+                border-radius: 10px;
+                font-size: 0.9rem;
+                font-weight: 500;
+                z-index: 9999;
+                animation:
+                    toastIn 0.3s ease,
+                    toastOut 0.3s ease 3.5s forwards;
+                box-shadow: 0 8px 24px rgba(99, 102, 241, 0.3);
+            }
+            @keyframes toastIn {
+                from {
+                    opacity: 0;
+                    transform: translateY(-20px);
+                }
+                to {
+                    opacity: 1;
+                    transform: translateY(0);
+                }
+            }
+            @keyframes toastOut {
+                from {
+                    opacity: 1;
+                }
+                to {
+                    opacity: 0;
+                    transform: translateY(-20px);
+                }
+            }
+
+            .modal-overlay {
+                display: none;
+                position: fixed;
+                inset: 0;
+                background: rgba(0, 0, 0, 0.6);
+                backdrop-filter: blur(4px);
+                z-index: 1000;
+                align-items: center;
+                justify-content: center;
+            }
+            .modal-overlay.active {
+                display: flex;
+            }
+            .modal {
+                background: linear-gradient(
+                    145deg,
+                    rgba(30, 35, 55, 0.97),
+                    rgba(20, 24, 40, 0.98)
+                );
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                border-radius: 16px;
+                padding: 28px 32px;
+                min-width: 360px;
+                max-width: 440px;
+                box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+                animation: toastIn 0.25s ease;
+            }
+            .modal h3 {
+                color: #fff;
+                margin: 0 0 20px;
+                font-size: 1.15rem;
+            }
+            .modal .field {
+                margin-bottom: 16px;
+            }
+            .modal .field label {
+                display: block;
+                font-size: 0.78rem;
+                color: #888;
+                text-transform: uppercase;
+                letter-spacing: 0.4px;
+                margin-bottom: 6px;
+            }
+            .modal input {
+                width: 100%;
+                box-sizing: border-box;
+                background: rgba(15, 17, 32, 0.8);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 8px;
+                padding: 10px 14px;
+                color: #fff;
+                font-size: 0.9rem;
+                font-family: inherit;
+                outline: none;
+            }
+            .modal input:focus {
+                border-color: #818cf8;
+            }
+            .modal input::placeholder {
+                color: #555;
+            }
+            .modal-actions {
+                display: flex;
+                gap: 10px;
+                justify-content: flex-end;
+                margin-top: 20px;
+            }
+            .btn-cancel {
+                background: rgba(255, 255, 255, 0.06);
+                color: #aaa;
+                border-color: rgba(255, 255, 255, 0.1);
+            }
+            .btn-cancel:hover {
+                background: rgba(255, 255, 255, 0.1);
+                color: #fff;
+            }
+            .btn-save {
+                background: linear-gradient(135deg, #818cf8, #6366f1);
+                color: #fff;
+            }
+            .btn-save:hover {
+                box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+            }
+
+            .text-muted {
+                color: #666;
+                font-size: 0.82rem;
+            }
+            .text-mono {
+                font-family: "SF Mono", "Fira Code", monospace;
+                font-size: 0.8rem;
+            }
+
+            .btn-history {
+                background: rgba(78, 205, 196, 0.12);
+                color: #4ecdc4;
+                border-color: rgba(78, 205, 196, 0.25);
+            }
+            .btn-history:hover {
+                background: rgba(78, 205, 196, 0.22);
+            }
+
+            .history-modal {
+                background: linear-gradient(
+                    145deg,
+                    rgba(30, 35, 55, 0.97),
+                    rgba(20, 24, 40, 0.98)
+                );
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                border-radius: 16px;
+                padding: 28px 32px;
+                min-width: 420px;
+                max-width: 600px;
+                width: 90vw;
+                max-height: 80vh;
+                display: flex;
+                flex-direction: column;
+                box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+                animation: toastIn 0.25s ease;
+            }
+            .history-modal h3 {
+                color: #fff;
+                margin: 0 0 8px;
+                font-size: 1.15rem;
+            }
+            .history-modal-user {
+                color: #4ecdc4;
+                font-size: 0.9rem;
+                font-weight: 600;
+                margin-bottom: 12px;
+            }
+            .history-list-container {
+                flex: 1;
+                overflow-y: auto;
+                max-height: 400px;
+                border: 1px solid rgba(255, 255, 255, 0.06);
+                border-radius: 10px;
+                background: rgba(15, 17, 32, 0.5);
+                padding: 8px;
+            }
+            .history-list-container::-webkit-scrollbar {
+                width: 6px;
+            }
+            .history-list-container::-webkit-scrollbar-track {
+                background: transparent;
+                border-radius: 3px;
+            }
+            .history-list-container::-webkit-scrollbar-thumb {
+                background: rgba(255, 255, 255, 0.15);
+                border-radius: 3px;
+            }
+            .history-item {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 10px 14px;
+                border-radius: 8px;
+                margin-bottom: 4px;
+                background: rgba(255, 255, 255, 0.03);
+                border: 1px solid rgba(255, 255, 255, 0.04);
+                transition: background 0.15s;
+            }
+            .history-item:hover {
+                background: rgba(255, 255, 255, 0.06);
+            }
+            .history-item-text {
+                flex: 1;
+                color: #ddd;
+                font-size: 0.88rem;
+                word-break: break-all;
+                margin-right: 12px;
+                font-family: "SF Mono", "Fira Code", monospace;
+                line-height: 1.4;
+            }
+            .history-item-delete {
+                background: rgba(239, 68, 68, 0.12);
+                color: #f87171;
+                border: 1px solid rgba(239, 68, 68, 0.25);
+                border-radius: 5px;
+                padding: 4px 10px;
+                font-size: 0.72rem;
+                cursor: pointer;
+                transition: all 0.15s;
+                font-family: inherit;
+                white-space: nowrap;
+            }
+            .history-item-delete:hover {
+                background: rgba(239, 68, 68, 0.25);
+            }
+            .history-empty {
+                text-align: center;
+                color: #666;
+                padding: 30px;
+                font-size: 0.9rem;
+            }
+            .history-loading {
+                text-align: center;
+                color: #888;
+                padding: 30px;
+                font-size: 0.9rem;
+            }
+            .history-modal-actions {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-top: 14px;
+                gap: 10px;
+            }
+            .btn-clear-history {
+                background: rgba(239, 68, 68, 0.12);
+                color: #f87171;
+                border-color: rgba(239, 68, 68, 0.25);
+            }
+            .btn-clear-history:hover {
+                background: rgba(239, 68, 68, 0.25);
+            }
+            .history-count {
+                color: #888;
+                font-size: 0.82rem;
+            }
+
+            @media (max-width: 768px) {
+                .stats-row {
+                    flex-direction: column;
+                }
+                .add-user-card form {
+                    flex-direction: column;
+                }
+                .add-user-card input,
+                .add-user-card select {
+                    min-width: auto;
+                    width: 100%;
+                    box-sizing: border-box;
+                }
+                .history-modal {
+                    min-width: 0;
+                    width: 95vw;
+                    padding: 18px;
+                }
+            }
+        </style>
     </head>
     <body>
         <header>
@@ -27,106 +586,677 @@
 
         <main>
             <div class="container">
-                <h1>Manage Users</h1>
-                <h2>Manage Users</h2>
+                <!-- ── Flash Message ──────────────────── -->
+                {% if message %}
+                <div class="toast" id="toast">{{ message }}</div>
+                {% endif %}
 
-                <!-- Add User Form -->
-                <div class="add-user-form">
-                    <h3>Add New User</h3>
+                <!-- ── Stats Cards ────────────────────── -->
+                <div class="stats-row">
+                    <div class="stat-card">
+                        <div class="stat-value">{{ stats.total_users }}</div>
+                        <div class="stat-label">Total Users</div>
+                    </div>
+                    <div class="stat-card success">
+                        <div class="stat-value">{{ stats.active_users }}</div>
+                        <div class="stat-label">Active</div>
+                    </div>
+                    <div class="stat-card danger">
+                        <div class="stat-value">{{ stats.banned_users }}</div>
+                        <div class="stat-label">Banned</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">
+                            {{ stats.active_sessions }}
+                        </div>
+                        <div class="stat-label">Live Sessions</div>
+                    </div>
+                    <div class="stat-card success">
+                        <div class="stat-value">{{ stats.logins_24h }}</div>
+                        <div class="stat-label">Logins (24h)</div>
+                    </div>
+                </div>
+
+                <!-- ── Add User ───────────────────────── -->
+                <div class="section-title">
+                    <span class="icon">+</span> Add New User
+                </div>
+                <div class="add-user-card">
                     <form action="/admin/add_user" method="post">
                         <input
-                            type="text"
-                            name="username"
-                            placeholder="New Username"
-                            required
+                            type="hidden"
+                            name="_csrf_token"
+                            value="{{ csrf_token }}"
                         />
-                        <input
-                            type="text"
-                            name="password"
-                            placeholder="New Password"
-                            minlength="6"
-                            required
-                        />
-                        <select name="role" required>
-                            <option value="admin">Admin</option>
-                            <option value="user">User</option>
-                        </select>
-                        <button type="submit">Add User</button>
+                        <div class="field">
+                            <label>Username</label>
+                            <input
+                                type="text"
+                                name="username"
+                                placeholder="e.g. student_01"
+                                required
+                                autocomplete="off"
+                            />
+                        </div>
+                        <div class="field">
+                            <label>Password (give to user)</label>
+                            <input
+                                type="text"
+                                name="password"
+                                placeholder="min 6 characters"
+                                minlength="6"
+                                required
+                                autocomplete="off"
+                            />
+                        </div>
+                        <div class="field">
+                            <label>Role</label>
+                            <select name="role" required>
+                                <option value="user" selected>User</option>
+                                <option value="admin">Admin</option>
+                            </select>
+                        </div>
+                        <button type="submit">Create User</button>
                     </form>
                 </div>
 
-                <!-- User Management Table -->
-                <table>
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>Username</th>
-                            <th>Role</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for user in users %}
-                        <tr>
-                            <td>{{ user.id }}</td>
-                            <td>{{ user.username }}</td>
-                            <td>{{ user.role }}</td>
-                            <td>
-                                <!-- Update Form -->
-                                <form
-                                    action="/admin/update_user"
-                                    method="post"
-                                    style="display: inline"
+                <!-- ── User Table ─────────────────────── -->
+                <div class="section-title">
+                    <span class="icon">&#9783;</span> All Users
+                </div>
+                <div class="table-wrapper">
+                    <table class="user-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Username</th>
+                                <th>Role</th>
+                                <th>Status</th>
+                                <th>Copied</th>
+                                <th>Submitted</th>
+                                <th>Logins</th>
+                                <th>Last Login</th>
+                                <th>Last IP</th>
+                                <th>Created</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for user in users %}
+                            <tr
+                                style="{% if user.is_active == false %}opacity: 0.55;{% endif %}"
+                            >
+                                <td class="text-muted">{{ user.id }}</td>
+                                <td style="font-weight: 600; color: #fff">
+                                    {{ user.username }}
+                                </td>
+                                <td>
+                                    {% if user.role == 'admin' %}
+                                    <span class="badge badge-admin">Admin</span>
+                                    {% else %}
+                                    <span class="badge badge-user">User</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if user.is_active == false %}
+                                    <span class="badge badge-banned"
+                                        >Banned</span
+                                    >
+                                    {% else %}
+                                    <span class="badge badge-active"
+                                        >Active</span
+                                    >
+                                    {% endif %}
+                                </td>
+                                <td
+                                    class="text-mono"
+                                    style="text-align: center"
                                 >
-                                    <input
-                                        type="hidden"
-                                        name="user_id"
-                                        value="{{ user.id }}"
-                                    />
-                                    <input
-                                        type="text"
-                                        name="username"
-                                        value="{{ user.username }}"
-                                        required
-                                    />
-                                    <input
-                                        type="text"
-                                        name="password"
-                                        placeholder="New Password"
-                                        minlength="6"
-                                    />
-                                    <button type="submit">Update</button>
-                                </form>
-                                <!-- Delete Form -->
-                                <form
-                                    action="/admin/delete_user"
-                                    method="post"
-                                    style="display: inline"
-                                    onsubmit="return confirm('Are you sure you want to delete user {{ user.username }}?');"
+                                    {% set tc = text_counts.get(user.username,
+                                    {}) %}
+                                    <span
+                                        style="{% if tc.get('copied', 0) > 0 %}color:#4ecdc4;font-weight:600{% else %}color:#666{% endif %}"
+                                        >{{ tc.get('copied', 0) }}</span
+                                    >
+                                </td>
+                                <td
+                                    class="text-mono"
+                                    style="text-align: center"
                                 >
-                                    <input
-                                        type="hidden"
-                                        name="user_id"
-                                        value="{{ user.id }}"
-                                    />
-                                    <button type="submit" class="delete-btn">
-                                        Delete
-                                    </button>
-                                </form>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+                                    <span
+                                        style="{% if tc.get('submitted', 0) > 0 %}color:#ffe66d;font-weight:600{% else %}color:#666{% endif %}"
+                                        >{{ tc.get('submitted', 0) }}</span
+                                    >
+                                </td>
+                                <td class="text-mono">
+                                    {{ user.login_count or 0 }}
+                                </td>
+                                <td class="text-muted text-mono">
+                                    {{ user.last_login_at|fmtdt }}
+                                </td>
+                                <td class="text-muted text-mono">
+                                    {{ user.last_login_ip or '--' }}
+                                </td>
+                                <td class="text-muted text-mono">
+                                    {{ user.created_at|fmtd }}
+                                </td>
+                                <td>
+                                    <div class="actions">
+                                        <!-- History -->
+                                        <button
+                                            class="btn btn-history"
+                                            type="button"
+                                            onclick="openHistory({{ user.username|tojson|forceescape }})"
+                                        >
+                                            &#128203; History
+                                        </button>
 
-                {% if message %}
-                <p class="message">{{ message }}</p>
-                {% endif %}
+                                        <!-- Edit -->
+                                        <button
+                                            class="btn btn-edit"
+                                            type="button"
+                                            onclick="openEdit({{ user.id|tojson|forceescape }}, {{ user.username|tojson|forceescape }})"
+                                        >
+                                            Edit
+                                        </button>
+
+                                        <!-- Ban / Unban -->
+                                        <form
+                                            action="/admin/ban_user"
+                                            method="post"
+                                            style="display: inline"
+                                        >
+                                            <input
+                                                type="hidden"
+                                                name="_csrf_token"
+                                                value="{{ csrf_token }}"
+                                            />
+                                            <input
+                                                type="hidden"
+                                                name="user_id"
+                                                value="{{ user.id }}"
+                                            />
+                                            {% if user.is_active == false %}
+                                            <button
+                                                class="btn btn-unban"
+                                                type="submit"
+                                            >
+                                                Unban
+                                            </button>
+                                            {% else %}
+                                            <button
+                                                class="btn btn-ban"
+                                                type="submit"
+                                                onclick="return confirm('Ban user ' + {{ user.username|tojson|forceescape }} + '?')"
+                                            >
+                                                Ban
+                                            </button>
+                                            {% endif %}
+                                        </form>
+
+                                        <!-- Delete -->
+                                        <form
+                                            action="/admin/delete_user"
+                                            method="post"
+                                            style="display: inline"
+                                            onsubmit="return confirm('PERMANENTLY delete ' + {{ user.username|tojson|forceescape }} + '? This cannot be undone.');"
+                                        >
+                                            <input
+                                                type="hidden"
+                                                name="_csrf_token"
+                                                value="{{ csrf_token }}"
+                                            />
+                                            <input
+                                                type="hidden"
+                                                name="user_id"
+                                                value="{{ user.id }}"
+                                            />
+                                            <button
+                                                class="btn btn-delete"
+                                                type="submit"
+                                            >
+                                                Delete
+                                            </button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </main>
+
+        <!-- ── History Modal ──────────────────────────── -->
+        <div class="modal-overlay" id="historyModal">
+            <div class="history-modal">
+                <h3>Text History</h3>
+                <div class="history-modal-user" id="history-modal-user"></div>
+                <!-- Tab switcher -->
+                <div
+                    style="
+                        display: flex;
+                        gap: 0;
+                        margin-bottom: 12px;
+                        border-bottom: 1px solid #333;
+                    "
+                >
+                    <button
+                        type="button"
+                        class="history-tab active"
+                        id="tab-copied"
+                        onclick="switchHistoryTab('copied')"
+                        style="
+                            padding: 8px 18px;
+                            background: transparent;
+                            border: none;
+                            color: #4ecdc4;
+                            font-weight: 600;
+                            cursor: pointer;
+                            border-bottom: 2px solid #4ecdc4;
+                            font-size: 0.95rem;
+                        "
+                    >
+                        Copied <span id="tab-copied-count"></span>
+                    </button>
+                    <button
+                        type="button"
+                        class="history-tab"
+                        id="tab-submitted"
+                        onclick="switchHistoryTab('submitted')"
+                        style="
+                            padding: 8px 18px;
+                            background: transparent;
+                            border: none;
+                            color: #888;
+                            font-weight: 400;
+                            cursor: pointer;
+                            border-bottom: 2px solid transparent;
+                            font-size: 0.95rem;
+                        "
+                    >
+                        Submitted <span id="tab-submitted-count"></span>
+                    </button>
+                </div>
+                <div class="history-list-container" id="history-list-container">
+                    <div class="history-loading">Loading...</div>
+                </div>
+                <div class="history-modal-actions">
+                    <span class="history-count" id="history-count"></span>
+                    <div style="display: flex; gap: 8px">
+                        <button
+                            class="btn btn-clear-history"
+                            type="button"
+                            id="clear-history-btn"
+                            onclick="clearHistory()"
+                        >
+                            Clear All
+                        </button>
+                        <button
+                            class="btn btn-cancel"
+                            type="button"
+                            onclick="closeHistory()"
+                        >
+                            Close
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── Edit Modal ─────────────────────────────── -->
+        <div class="modal-overlay" id="editModal">
+            <div class="modal">
+                <h3>Edit User</h3>
+                <form action="/admin/update_user" method="post">
+                    <input
+                        type="hidden"
+                        name="_csrf_token"
+                        value="{{ csrf_token }}"
+                    />
+                    <input type="hidden" name="user_id" id="edit-user-id" />
+                    <div class="field">
+                        <label>Username</label>
+                        <input
+                            type="text"
+                            name="username"
+                            id="edit-username"
+                            required
+                        />
+                    </div>
+                    <div class="field">
+                        <label>New Password (leave blank to keep)</label>
+                        <input
+                            type="text"
+                            name="password"
+                            id="edit-password"
+                            placeholder="min 6 characters"
+                            minlength="6"
+                            autocomplete="off"
+                        />
+                    </div>
+                    <div class="modal-actions">
+                        <button
+                            type="button"
+                            class="btn btn-cancel"
+                            onclick="closeEdit()"
+                        >
+                            Cancel
+                        </button>
+                        <button type="submit" class="btn btn-save">
+                            Save Changes
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
 
         <footer>
             <p>&copy; 2024 AssistX</p>
         </footer>
+
+        <script>
+            // ── Edit modal ───────────────────────────────
+            function openEdit(id, username) {
+                document.getElementById("edit-user-id").value = id;
+                document.getElementById("edit-username").value = username;
+                document.getElementById("edit-password").value = "";
+                document.getElementById("editModal").classList.add("active");
+            }
+            function closeEdit() {
+                document.getElementById("editModal").classList.remove("active");
+            }
+            document
+                .getElementById("editModal")
+                .addEventListener("click", function (e) {
+                    if (e.target === this) closeEdit();
+                });
+
+            // ── History modal ────────────────────────────
+            var _historyUser = "";
+            var _historyData = { copied: [], submitted: [] };
+            var _activeTab = "copied";
+
+            function switchHistoryTab(tab) {
+                _activeTab = tab;
+                // Update tab styles
+                var tabCopied = document.getElementById("tab-copied");
+                var tabSubmitted = document.getElementById("tab-submitted");
+                if (tab === "copied") {
+                    tabCopied.style.color = "#4ecdc4";
+                    tabCopied.style.fontWeight = "600";
+                    tabCopied.style.borderBottom = "2px solid #4ecdc4";
+                    tabSubmitted.style.color = "#888";
+                    tabSubmitted.style.fontWeight = "400";
+                    tabSubmitted.style.borderBottom = "2px solid transparent";
+                } else {
+                    tabSubmitted.style.color = "#ffe66d";
+                    tabSubmitted.style.fontWeight = "600";
+                    tabSubmitted.style.borderBottom = "2px solid #ffe66d";
+                    tabCopied.style.color = "#888";
+                    tabCopied.style.fontWeight = "400";
+                    tabCopied.style.borderBottom = "2px solid transparent";
+                }
+                renderHistoryItems();
+            }
+
+            function renderHistoryItems() {
+                var items =
+                    _activeTab === "copied"
+                        ? _historyData.copied
+                        : _historyData.submitted;
+                var container = document.getElementById(
+                    "history-list-container",
+                );
+                var label = _activeTab === "copied" ? "copied" : "submitted";
+
+                if (!items || items.length === 0) {
+                    container.innerHTML =
+                        '<div class="history-empty">No ' +
+                        label +
+                        " text history for this user.</div>";
+                    document.getElementById("history-count").textContent =
+                        "0 items";
+                    return;
+                }
+                document.getElementById("history-count").textContent =
+                    items.length + " item" + (items.length !== 1 ? "s" : "");
+                container.innerHTML = "";
+                items.forEach(function (item) {
+                    var div = document.createElement("div");
+                    div.className = "history-item";
+
+                    var textSpan = document.createElement("span");
+                    textSpan.className = "history-item-text";
+                    textSpan.textContent = item.text;
+
+                    var delBtn = document.createElement("button");
+                    delBtn.className = "history-item-delete";
+                    delBtn.textContent = "Delete";
+                    delBtn.onclick = function () {
+                        deleteHistoryItem(
+                            _historyUser,
+                            item.text,
+                            div,
+                            _activeTab,
+                        );
+                    };
+
+                    div.appendChild(textSpan);
+                    div.appendChild(delBtn);
+                    container.appendChild(div);
+                });
+            }
+
+            function openHistory(username) {
+                _historyUser = username;
+                _historyData = { copied: [], submitted: [] };
+                _activeTab = "copied";
+                document.getElementById("history-modal-user").textContent =
+                    "User: " + username;
+                document.getElementById("history-list-container").innerHTML =
+                    '<div class="history-loading">Loading...</div>';
+                document.getElementById("history-count").textContent = "";
+                document.getElementById("tab-copied-count").textContent = "";
+                document.getElementById("tab-submitted-count").textContent = "";
+                // Reset tab styles
+                switchHistoryTab("copied");
+                document.getElementById("historyModal").classList.add("active");
+                fetchHistory(username);
+            }
+
+            function closeHistory() {
+                document
+                    .getElementById("historyModal")
+                    .classList.remove("active");
+                _historyUser = "";
+                _historyData = { copied: [], submitted: [] };
+            }
+
+            function fetchHistory(username) {
+                fetch(
+                    "/admin/api/user_history/" + encodeURIComponent(username),
+                    {
+                        credentials: "same-origin",
+                    },
+                )
+                    .then(function (r) {
+                        return r.json();
+                    })
+                    .then(function (data) {
+                        if (data.status !== "success") {
+                            document.getElementById(
+                                "history-list-container",
+                            ).innerHTML =
+                                '<div class="history-empty">Failed to load history.</div>';
+                            return;
+                        }
+                        _historyData.copied = data.copied_text_history || [];
+                        _historyData.submitted =
+                            data.submitted_text_history || [];
+                        // Update tab badge counts
+                        document.getElementById(
+                            "tab-copied-count",
+                        ).textContent = "(" + _historyData.copied.length + ")";
+                        document.getElementById(
+                            "tab-submitted-count",
+                        ).textContent =
+                            "(" + _historyData.submitted.length + ")";
+                        renderHistoryItems();
+                    })
+                    .catch(function (err) {
+                        document.getElementById(
+                            "history-list-container",
+                        ).innerHTML =
+                            '<div class="history-empty">Failed to load history.</div>';
+                        console.error(err);
+                    });
+            }
+
+            function deleteHistoryItem(username, text, element, tab) {
+                if (!confirm("Delete this " + tab + " text item?")) return;
+                var endpoint =
+                    tab === "copied"
+                        ? "/admin/api/delete_user_history_item/"
+                        : "/admin/api/delete_user_submitted_item/";
+                fetch(endpoint + encodeURIComponent(username), {
+                    method: "POST",
+                    credentials: "same-origin",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ text: text }),
+                })
+                    .then(function (r) {
+                        return r.json();
+                    })
+                    .then(function (data) {
+                        if (data.status === "success") {
+                            element.remove();
+                            // Remove from local data
+                            var arr =
+                                tab === "copied"
+                                    ? _historyData.copied
+                                    : _historyData.submitted;
+                            for (var i = 0; i < arr.length; i++) {
+                                if (arr[i].text === text) {
+                                    arr.splice(i, 1);
+                                    break;
+                                }
+                            }
+                            var remaining = document.querySelectorAll(
+                                "#history-list-container .history-item",
+                            ).length;
+                            document.getElementById(
+                                "history-count",
+                            ).textContent =
+                                remaining +
+                                " item" +
+                                (remaining !== 1 ? "s" : "");
+                            // Update tab counts
+                            document.getElementById(
+                                "tab-copied-count",
+                            ).textContent =
+                                "(" + _historyData.copied.length + ")";
+                            document.getElementById(
+                                "tab-submitted-count",
+                            ).textContent =
+                                "(" + _historyData.submitted.length + ")";
+                            if (remaining === 0) {
+                                var label =
+                                    tab === "copied" ? "copied" : "submitted";
+                                document.getElementById(
+                                    "history-list-container",
+                                ).innerHTML =
+                                    '<div class="history-empty">No ' +
+                                    label +
+                                    " text history for this user.</div>";
+                            }
+                        } else {
+                            alert("Failed to delete item.");
+                        }
+                    })
+                    .catch(function () {
+                        alert("Failed to delete item.");
+                    });
+            }
+
+            function clearHistory() {
+                var label = _activeTab === "copied" ? "copied" : "submitted";
+                if (
+                    !confirm(
+                        "Clear ALL " +
+                            label +
+                            " text history for " +
+                            _historyUser +
+                            "?",
+                    )
+                )
+                    return;
+                var endpoint =
+                    _activeTab === "copied"
+                        ? "/admin/api/clear_user_history/"
+                        : "/admin/api/clear_user_submitted/";
+                fetch(endpoint + encodeURIComponent(_historyUser), {
+                    method: "POST",
+                    credentials: "same-origin",
+                })
+                    .then(function (r) {
+                        return r.json();
+                    })
+                    .then(function (data) {
+                        if (data.status === "success") {
+                            if (_activeTab === "copied") {
+                                _historyData.copied = [];
+                            } else {
+                                _historyData.submitted = [];
+                            }
+                            document.getElementById(
+                                "tab-copied-count",
+                            ).textContent =
+                                "(" + _historyData.copied.length + ")";
+                            document.getElementById(
+                                "tab-submitted-count",
+                            ).textContent =
+                                "(" + _historyData.submitted.length + ")";
+                            document.getElementById(
+                                "history-list-container",
+                            ).innerHTML =
+                                '<div class="history-empty">No ' +
+                                label +
+                                " text history for this user.</div>";
+                            document.getElementById(
+                                "history-count",
+                            ).textContent = "0 items";
+                        } else {
+                            alert("Failed to clear history.");
+                        }
+                    })
+                    .catch(function () {
+                        alert("Failed to clear history.");
+                    });
+            }
+
+            document
+                .getElementById("historyModal")
+                .addEventListener("click", function (e) {
+                    if (e.target === this) closeHistory();
+                });
+
+            // ── Close modals on Escape ───────────────────
+            document.addEventListener("keydown", function (e) {
+                if (e.key === "Escape") {
+                    closeEdit();
+                    closeHistory();
+                }
+            });
+
+            // ── Auto-remove toast after animation ────────
+            var toast = document.getElementById("toast");
+            if (toast) {
+                setTimeout(function () {
+                    toast.remove();
+                }, 4200);
+            }
+        </script>
     </body>
 </html>

@@ -35,9 +35,6 @@ README.md
 *.md
 
 # Development scripts
-clip_keyboard.py
-clipboard_manager.py
-migrate_db.py
 start.sh
 
 # Logs
