@@ -266,9 +266,24 @@ _SIG_MAX_AGE_SECONDS = 30
 
 
 def _sign_response(nonce: str, username: str, session_token: str) -> Tuple[int, str]:
-    """Return (timestamp, hex_signature)."""
+    """Return (timestamp, hex_signature) for success responses."""
     ts = int(time.time())
     payload = f"{nonce}:{username}:{session_token}:{ts}"
+    sig = hmac.new(
+        RESPONSE_SIGN_KEY.encode(),
+        payload.encode(),
+        hashlib.sha256,
+    ).hexdigest()
+    return ts, sig
+
+
+def _sign_error_response(nonce: str, error_code: str, message: str) -> Tuple[int, str]:
+    """
+    Return (timestamp, hex_signature) for error responses.
+    Signs the error so MITM cannot forge banned/kicked messages.
+    """
+    ts = int(time.time())
+    payload = f"{nonce}:ERROR:{error_code}:{message}:{ts}"
     sig = hmac.new(
         RESPONSE_SIGN_KEY.encode(),
         payload.encode(),
@@ -375,6 +390,22 @@ RATE_LIMIT_WINDOW_MINUTES = 5
 
 # ── Single-session login cooldown (seconds) ──────────────────────────
 LOGIN_COOLDOWN_SECONDS = int(os.getenv("LOGIN_COOLDOWN_SECONDS", "5"))
+
+# ── Session TTL (hours) — sessions older than this are expired ────────
+SESSION_MAX_AGE_HOURS = int(os.getenv("SESSION_MAX_AGE_HOURS", "24"))
+
+
+def _is_session_expired(row) -> bool:
+    """Return True if the session has exceeded SESSION_MAX_AGE_HOURS."""
+    if not row:
+        return True
+    logged_in = row.logged_in_at
+    if logged_in is None:
+        return True
+    if logged_in.tzinfo is None:
+        logged_in = logged_in.replace(tzinfo=timezone.utc)
+    age = (datetime.now(timezone.utc) - logged_in).total_seconds()
+    return age > (SESSION_MAX_AGE_HOURS * 3600)
 
 
 def _check_login_cooldown(db, username: str) -> tuple[bool, int]:
@@ -567,6 +598,33 @@ async def startup_event():
                 active,
                 count,
             )
+        # ── Cleanup stale records ─────────────────────────────────
+        try:
+            cutoff_attempts = now - timedelta(days=7)
+            deleted_attempts = db.execute(
+                login_attempts.delete().where(
+                    login_attempts.c.attempted_at < cutoff_attempts
+                )
+            ).rowcount
+            if deleted_attempts:
+                log.info("  Purged %d old login_attempts (>7 days)", deleted_attempts)
+
+            cutoff_sessions = now - timedelta(days=30)
+            deleted_sessions = db.execute(
+                login_sessions.delete()
+                .where(login_sessions.c.is_active == False)  # noqa: E712
+                .where(login_sessions.c.last_active_at < cutoff_sessions)
+            ).rowcount
+            if deleted_sessions:
+                log.info(
+                    "  Purged %d inactive login_sessions (>30 days)", deleted_sessions
+                )
+
+            db.commit()
+        except Exception as e:
+            log.error("  Cleanup failed (non-fatal): %s", e)
+            db.rollback()
+
     except Exception as e:
         log.error("Startup error: %s", e)
         raise
@@ -1260,10 +1318,8 @@ async def user_login(request: Request):
 
         user = _find_user_by_credentials(db, username, password)
         if user:
-            _record_attempt(db, f"user:{client_ip}", True)
-            _update_user_login_stats(db, user.id, client_ip)
-
             # ── login cooldown — block rapid re-login from another device ─
+            # Must check BEFORE recording success / bumping login stats
             is_cooled, secs_left = _check_login_cooldown(db, username)
             if is_cooled:
                 return templates.TemplateResponse(
@@ -1273,6 +1329,9 @@ async def user_login(request: Request):
                         "error": f"Account already active on another device. Try again in {secs_left}s.",
                     },
                 )
+
+            _record_attempt(db, f"user:{client_ip}", True)
+            _update_user_login_stats(db, user.id, client_ip)
 
             # ── deactivate old web sessions ───────────────────────────
             db.execute(
@@ -1376,16 +1435,14 @@ async def authenticate_user(request: Request):
                     status_code=429,
                 )
 
-            user = db.execute(
-                users.select().where(users.c.username == username)
-            ).fetchone()
+            user = _find_user_by_credentials(db, username, password)
 
-            if user and verify_password(password, user.password):
+            if user:
                 _record_attempt(db, f"api:{client_ip}", True)
                 return JSONResponse(
                     content={
                         "status": "success",
-                        "username": username,
+                        "username": user.username,
                         "role": user.role,
                     }
                 )
@@ -1489,11 +1546,17 @@ async def app_login(request: Request):
 
         # ── banned check ──────────────────────────────────────────────
         if _is_user_banned(db, req_username):
+            err_code = "ACCOUNT_BANNED"
+            err_msg = "Your account has been banned. Please contact admin."
+            ts, sig = _sign_error_response(client_nonce, err_code, err_msg)
             return JSONResponse(
                 content={
                     "status": "error",
-                    "code": "ACCOUNT_BANNED",
-                    "message": "Your account has been banned. Contact an administrator.",
+                    "code": err_code,
+                    "message": err_msg,
+                    "nonce": client_nonce,
+                    "ts": ts,
+                    "sig": sig,
                 },
                 status_code=403,
             )
@@ -1504,35 +1567,65 @@ async def app_login(request: Request):
         if not user:
             _record_attempt(db, client_ip, False)
             is_locked_now, secs = _check_rate_limit(db, client_ip)
-            resp = {"status": "error", "message": "Invalid credentials"}
             if is_locked_now:
-                resp["code"] = "RATE_LIMITED"
-                resp["retry_after_seconds"] = secs
-                resp["message"] = (
+                err_code = "RATE_LIMITED"
+                err_msg = (
                     f"Too many failed attempts. Try again in {(secs // 60) + 1} min."
                 )
-                return JSONResponse(content=resp, status_code=429)
-            return JSONResponse(content=resp, status_code=401)
+                ts, sig = _sign_error_response(client_nonce, err_code, err_msg)
+                return JSONResponse(
+                    content={
+                        "status": "error",
+                        "code": err_code,
+                        "message": err_msg,
+                        "retry_after_seconds": secs,
+                        "nonce": client_nonce,
+                        "ts": ts,
+                        "sig": sig,
+                    },
+                    status_code=429,
+                )
+            err_code = "INVALID_CREDENTIALS"
+            err_msg = "Invalid credentials"
+            ts, sig = _sign_error_response(client_nonce, err_code, err_msg)
+            return JSONResponse(
+                content={
+                    "status": "error",
+                    "code": err_code,
+                    "message": err_msg,
+                    "nonce": client_nonce,
+                    "ts": ts,
+                    "sig": sig,
+                },
+                status_code=401,
+            )
 
         username = user.username
         role = user.role
 
-        # ── record success + update login stats ───────────────────────
-        _record_attempt(db, client_ip, True)
-        _update_user_login_stats(db, user.id, client_ip)
-
         # ── login cooldown — block rapid re-login from another device ─
+        # Must check BEFORE recording success / bumping login stats
         is_cooled, secs_left = _check_login_cooldown(db, username)
         if is_cooled:
+            err_code = "LOGIN_COOLDOWN"
+            err_msg = f"Account already active. Try again in {secs_left}s."
+            ts, sig = _sign_error_response(client_nonce, err_code, err_msg)
             return JSONResponse(
                 content={
                     "status": "error",
-                    "code": "LOGIN_COOLDOWN",
-                    "message": f"Account already active. Try again in {secs_left}s.",
+                    "code": err_code,
+                    "message": err_msg,
                     "retry_after_seconds": secs_left,
+                    "nonce": client_nonce,
+                    "ts": ts,
+                    "sig": sig,
                 },
                 status_code=429,
             )
+
+        # ── record success + update login stats ───────────────────────
+        _record_attempt(db, client_ip, True)
+        _update_user_login_stats(db, user.id, client_ip)
 
         # ── deactivate old sessions (single-session) ──────────────────
         db.execute(
@@ -1632,6 +1725,17 @@ async def app_validate_session(request: Request):
             .where(login_sessions.c.is_active == True)  # noqa: E712
         ).fetchone()
 
+        # ── check session TTL ─────────────────────────────────────────
+        if row and _is_session_expired(row):
+            db.execute(
+                login_sessions.update()
+                .where(login_sessions.c.id == row.id)
+                .values(is_active=False)
+            )
+            db.commit()
+            log.info("Session expired (TTL) for user=%s", row.username)
+            row = None  # treat as no active session
+
         if not row:
             # Check if the token exists but was deactivated (kicked by another login)
             kicked_row = db.execute(
@@ -1643,26 +1747,48 @@ async def app_validate_session(request: Request):
             if kicked_row:
                 # Check if the user was banned after the session was created
                 if _is_user_banned(db, kicked_row.username):
+                    err_code = "ACCOUNT_BANNED"
+                    err_msg = "Your account has been banned. Please contact admin."
+                    ts, sig = _sign_error_response(client_nonce, err_code, err_msg)
                     return JSONResponse(
                         content={
                             "status": "error",
-                            "code": "ACCOUNT_BANNED",
-                            "message": "Your account has been banned. Contact an administrator.",
+                            "code": err_code,
+                            "message": err_msg,
+                            "nonce": client_nonce,
+                            "ts": ts,
+                            "sig": sig,
                         },
                         status_code=403,
                     )
 
+                err_code = "SESSION_KICKED"
+                err_msg = "Your account was logged in from another device. You have been logged out."
+                ts, sig = _sign_error_response(client_nonce, err_code, err_msg)
                 return JSONResponse(
                     content={
                         "status": "error",
-                        "code": "SESSION_KICKED",
-                        "message": "Your account was logged in from another device. You have been logged out.",
+                        "code": err_code,
+                        "message": err_msg,
+                        "nonce": client_nonce,
+                        "ts": ts,
+                        "sig": sig,
                     },
                     status_code=401,
                 )
 
+            err_code = "SESSION_EXPIRED"
+            err_msg = "Session invalid or expired"
+            ts, sig = _sign_error_response(client_nonce, err_code, err_msg)
             return JSONResponse(
-                content={"status": "error", "message": "Session invalid or expired"},
+                content={
+                    "status": "error",
+                    "code": err_code,
+                    "message": err_msg,
+                    "nonce": client_nonce,
+                    "ts": ts,
+                    "sig": sig,
+                },
                 status_code=401,
             )
 
@@ -1675,11 +1801,17 @@ async def app_validate_session(request: Request):
                 .values(is_active=False)
             )
             db.commit()
+            err_code = "ACCOUNT_BANNED"
+            err_msg = "Your account has been banned. Please contact admin."
+            ts, sig = _sign_error_response(client_nonce, err_code, err_msg)
             return JSONResponse(
                 content={
                     "status": "error",
-                    "code": "ACCOUNT_BANNED",
-                    "message": "Your account has been banned. Contact an administrator.",
+                    "code": err_code,
+                    "message": err_msg,
+                    "nonce": client_nonce,
+                    "ts": ts,
+                    "sig": sig,
                 },
                 status_code=403,
             )
@@ -1862,6 +1994,15 @@ def _authorize_clipboard_access(request: Request, username: str) -> bool:
                     .where(login_sessions.c.is_active == True)  # noqa: E712
                 ).fetchone()
                 if row:
+                    # Check session TTL
+                    if _is_session_expired(row):
+                        db.execute(
+                            login_sessions.update()
+                            .where(login_sessions.c.id == row.id)
+                            .values(is_active=False)
+                        )
+                        db.commit()
+                        return False
                     return True
             except Exception:
                 pass
@@ -1901,6 +2042,14 @@ async def get_copied_text_history(username: str, request: Request):
 async def submit_to_clipboard(username: str, item: HistoryItem, request: Request):
     if not _authorize_clipboard_access(request, username):
         raise HTTPException(status_code=403, detail="Not authorized")
+
+    # ── Input size limit (prevent DoS via huge payloads) ──────────
+    if len(item.text) > 10_000:
+        return JSONResponse(
+            content={"status": "error", "message": "Text too large (max 10KB)"},
+            status_code=413,
+        )
+
     db = SessionLocal()
     try:
         db.execute(clipboard_updates.insert().values(username=username, text=item.text))
@@ -2082,6 +2231,14 @@ async def get_submitted_text_history(username: str, request: Request):
 async def submit_submitted_text(username: str, item: HistoryItem, request: Request):
     if not _authorize_clipboard_access(request, username):
         raise HTTPException(status_code=403, detail="Not authorized")
+
+    # ── Input size limit (prevent DoS via huge payloads) ──────────
+    if len(item.text) > 10_000:
+        return JSONResponse(
+            content={"status": "error", "message": "Text too large (max 10KB)"},
+            status_code=413,
+        )
+
     db = SessionLocal()
     try:
         db.execute(
