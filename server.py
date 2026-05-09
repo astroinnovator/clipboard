@@ -9,7 +9,6 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional, Tuple
 
-# ── Logging ───────────────────────────────────────────────────────────
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "WARNING").upper(),
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -39,15 +38,11 @@ from sqlalchemy import (
 from sqlalchemy.orm import sessionmaker
 from starlette.middleware.sessions import SessionMiddleware
 
-# ══════════════════════════════════════════════════════════════════════
-#  ENV + STARTUP
-# ══════════════════════════════════════════════════════════════════════
 
 load_dotenv()
 
 app = FastAPI()
 
-# ── CORS ──────────────────────────────────────────────────────────────
 cors_origins_env = os.getenv("CORS_ORIGINS")
 if not cors_origins_env:
     raise ValueError("CORS_ORIGINS environment variable must be set")
@@ -61,13 +56,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Session middleware ────────────────────────────────────────────────
 SESSION_SECRET = os.getenv("SESSION_SECRET_KEY")
 if not SESSION_SECRET:
     raise ValueError("SESSION_SECRET_KEY environment variable must be set")
 app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET)
 
-# ── CSRF token helpers ────────────────────────────────────────────────
 _CSRF_TOKEN_FIELD = "_csrf_token"
 _CSRF_TOKEN_LENGTH = 32
 
@@ -94,7 +87,6 @@ def _consume_csrf_token(request: Request):
     request.session[_CSRF_TOKEN_FIELD] = secrets.token_urlsafe(_CSRF_TOKEN_LENGTH)
 
 
-# ── Default credentials ──────────────────────────────────────────────
 DEFAULT_ADMIN_USERNAME = os.getenv("DEFAULT_ADMIN_USERNAME")
 DEFAULT_ADMIN_PASSWORD = os.getenv("DEFAULT_ADMIN_PASSWORD")
 if not DEFAULT_ADMIN_USERNAME or not DEFAULT_ADMIN_PASSWORD:
@@ -109,7 +101,6 @@ if not DEFAULT_USER_USERNAME or not DEFAULT_USER_PASSWORD:
         "DEFAULT_USER_USERNAME and DEFAULT_USER_PASSWORD environment variables must be set"
     )
 
-# ── Response signing key (anti-tamper) ────────────────────────────────
 RESPONSE_SIGN_KEY = os.getenv("RESPONSE_SIGN_KEY")
 if not RESPONSE_SIGN_KEY:
     raise ValueError(
@@ -117,13 +108,9 @@ if not RESPONSE_SIGN_KEY:
         'Generate one with: python -c "import secrets; print(secrets.token_hex(32))"'
     )
 
-# ── Paths ─────────────────────────────────────────────────────────────
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 
-# ══════════════════════════════════════════════════════════════════════
-#  STATIC FILES
-# ══════════════════════════════════════════════════════════════════════
 
 
 @app.get("/static/css/{file_path:path}")
@@ -200,12 +187,9 @@ def _fmt_date(value, fmt="%d %b %Y"):
 templates.env.filters["fmtdt"] = _fmt_datetime
 templates.env.filters["fmtd"] = _fmt_date
 
-# ══════════════════════════════════════════════════════════════════════
-#  PASSWORD HASHING — pbkdf2_hmac (no external deps)
-# ══════════════════════════════════════════════════════════════════════
 
 _HASH_ALGO = "sha256"
-_HASH_ITERATIONS = 260_000  # OWASP recommendation for PBKDF2-SHA256
+_HASH_ITERATIONS = 260_000
 _SALT_BYTES = 16
 _HASH_PREFIX = "$pbkdf2$"
 
@@ -223,7 +207,6 @@ def verify_password(plain: str, stored: str) -> bool:
     Supports BOTH hashed ($pbkdf2$...) and legacy plaintext for migration.
     """
     if stored.startswith(_HASH_PREFIX):
-        # hashed — parse and verify
         parts = stored[len(_HASH_PREFIX) :].split("$", 1)
         if len(parts) != 2:
             return False
@@ -236,7 +219,6 @@ def verify_password(plain: str, stored: str) -> bool:
         dk = hashlib.pbkdf2_hmac(_HASH_ALGO, plain.encode(), salt, _HASH_ITERATIONS)
         return hmac.compare_digest(dk, expected)
     else:
-        # legacy plaintext — constant-time compare
         return hmac.compare_digest(stored.encode(), plain.encode())
 
 
@@ -244,23 +226,6 @@ def validate_password_length(password: str) -> bool:
     return len(password) >= 6
 
 
-# ══════════════════════════════════════════════════════════════════════
-#  HMAC RESPONSE SIGNING — prevents MITM response tampering
-# ══════════════════════════════════════════════════════════════════════
-#
-#  How it works:
-#    1. Client sends a random  nonce  with the login request.
-#    2. Server computes:
-#         payload  = f"{nonce}:{username}:{session_token}:{timestamp}"
-#         sig      = HMAC-SHA256(RESPONSE_SIGN_KEY, payload)
-#    3. Server returns  nonce, ts, sig  alongside the normal response.
-#    4. Client re-computes the HMAC with its embedded key and verifies:
-#         • nonce matches what it sent   (no replay of old responses)
-#         • ts within ±30 s of now        (no delayed replay)
-#         • sig matches                   (no body tampering)
-#
-#  Even if an attacker proxies the TLS traffic, they cannot forge sig
-#  without knowing RESPONSE_SIGN_KEY.
 
 _SIG_MAX_AGE_SECONDS = 30
 
@@ -292,9 +257,6 @@ def _sign_error_response(nonce: str, error_code: str, message: str) -> Tuple[int
     return ts, sig
 
 
-# ══════════════════════════════════════════════════════════════════════
-#  DATABASE
-# ══════════════════════════════════════════════════════════════════════
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
@@ -314,13 +276,12 @@ except Exception as e:
 
 metadata = MetaData()
 
-# ── users table (enhanced) ────────────────────────────────────────────
 users = Table(
     "users",
     metadata,
     Column("id", Integer, primary_key=True),
     Column("username", String(50), unique=True, nullable=False),
-    Column("password", String(256), nullable=False),  # now stores hash
+    Column("password", String(256), nullable=False),
     Column("role", String(10), nullable=False),
     Column("created_at", DateTime, nullable=True),
     Column("updated_at", DateTime, nullable=True),
@@ -354,7 +315,6 @@ clipboard_updates = Table(
     Column("text", String, nullable=False),
 )
 
-# ── login sessions (device tracking + single-session) ─────────────────
 login_sessions = Table(
     "login_sessions",
     metadata,
@@ -374,7 +334,6 @@ login_sessions = Table(
     Column("is_active", Boolean, nullable=False, default=True),
 )
 
-# ── login attempts (rate limiting) ────────────────────────────────────
 login_attempts = Table(
     "login_attempts",
     metadata,
@@ -384,14 +343,11 @@ login_attempts = Table(
     Column("was_successful", Boolean, nullable=False, default=False),
 )
 
-# ── Rate-limit settings ──────────────────────────────────────────────
 RATE_LIMIT_MAX_ATTEMPTS = 5
 RATE_LIMIT_WINDOW_MINUTES = 5
 
-# ── Single-session login cooldown (seconds) ──────────────────────────
 LOGIN_COOLDOWN_SECONDS = int(os.getenv("LOGIN_COOLDOWN_SECONDS", "5"))
 
-# ── Session TTL (hours) — sessions older than this are expired ────────
 SESSION_MAX_AGE_HOURS = int(os.getenv("SESSION_MAX_AGE_HOURS", "24"))
 
 
@@ -417,7 +373,7 @@ def _check_login_cooldown(db, username: str) -> tuple[bool, int]:
     row = db.execute(
         login_sessions.select()
         .where(login_sessions.c.username == username)
-        .where(login_sessions.c.is_active == True)  # noqa: E712
+        .where(login_sessions.c.is_active == True)
         .order_by(login_sessions.c.logged_in_at.desc())
     ).fetchone()
 
@@ -437,9 +393,6 @@ def _check_login_cooldown(db, username: str) -> tuple[bool, int]:
     return False, 0
 
 
-# ══════════════════════════════════════════════════════════════════════
-#  DB MIGRATION — safely add new columns to existing tables
-# ══════════════════════════════════════════════════════════════════════
 
 _USERS_NEW_COLUMNS = {
     "created_at": "TIMESTAMP",
@@ -455,14 +408,11 @@ def _migrate_users_table(conn, inspector):
     """Add any missing columns to the users table."""
     existing = {col["name"] for col in inspector.get_columns("users")}
 
-    # Remove legacy secret_key if present
     if "secret_key" in existing:
         log.info("  -> Dropping legacy secret_key column")
         conn.execute(text("ALTER TABLE users DROP COLUMN IF EXISTS secret_key;"))
         conn.commit()
 
-    # Widen password column from VARCHAR(50) to VARCHAR(256) for hashes
-    # PostgreSQL: safe to do, data is preserved
     try:
         conn.execute(text("ALTER TABLE users ALTER COLUMN password TYPE VARCHAR(256);"))
         conn.commit()
@@ -471,7 +421,6 @@ def _migrate_users_table(conn, inspector):
         log.debug("  -> password column resize skipped: %s", e)
         conn.rollback()
 
-    # Add new columns
     for col_name, col_type in _USERS_NEW_COLUMNS.items():
         if col_name not in existing:
             log.info("  -> Adding column users.%s", col_name)
@@ -511,7 +460,6 @@ try:
             log.info("Migrating users table...")
             _migrate_users_table(conn, inspector)
 
-        # Create any brand-new tables
         metadata.create_all(engine)
         log.info("Tables created / updated successfully")
 
@@ -525,9 +473,6 @@ except Exception as e:
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# ══════════════════════════════════════════════════════════════════════
-#  STARTUP — create default users
-# ══════════════════════════════════════════════════════════════════════
 
 
 @app.on_event("startup")
@@ -543,7 +488,6 @@ async def startup_event():
 
         now = datetime.now(timezone.utc)
 
-        # Default admin
         existing_admin = db.execute(
             users.select().where(users.c.username == DEFAULT_ADMIN_USERNAME)
         ).fetchone()
@@ -563,7 +507,6 @@ async def startup_event():
         else:
             log.debug("  Admin '%s' already exists", DEFAULT_ADMIN_USERNAME)
 
-        # Default user
         existing_user = db.execute(
             users.select().where(users.c.username == DEFAULT_USER_USERNAME)
         ).fetchone()
@@ -598,7 +541,6 @@ async def startup_event():
                 active,
                 count,
             )
-        # ── Cleanup stale records ─────────────────────────────────
         try:
             cutoff_attempts = now - timedelta(days=7)
             deleted_attempts = db.execute(
@@ -612,7 +554,7 @@ async def startup_event():
             cutoff_sessions = now - timedelta(days=30)
             deleted_sessions = db.execute(
                 login_sessions.delete()
-                .where(login_sessions.c.is_active == False)  # noqa: E712
+                .where(login_sessions.c.is_active == False)
                 .where(login_sessions.c.last_active_at < cutoff_sessions)
             ).rowcount
             if deleted_sessions:
@@ -632,15 +574,8 @@ async def startup_event():
         db.close()
 
 
-# ══════════════════════════════════════════════════════════════════════
-#  HELPERS
-# ══════════════════════════════════════════════════════════════════════
 
 
-# Set of trusted proxy IPs — only these may set X-Forwarded-For.
-# In production behind Vercel/Cloudflare, the LAST entry in X-Forwarded-For
-# (added by the trusted edge proxy) is the real client IP.
-# For safety, we only trust the header when the direct peer is a known proxy.
 _TRUSTED_PROXIES = set(filter(None, os.getenv("TRUSTED_PROXY_IPS", "").split(",")))
 
 
@@ -653,9 +588,7 @@ def _get_client_ip(request: Request) -> str:
     """
     peer_ip = request.client.host if request.client else "unknown"
 
-    # Only trust forwarded headers if the direct peer is a trusted proxy
-    if peer_ip in _TRUSTED_PROXIES or _TRUSTED_PROXIES == {""}:
-        # Vercel/Cloudflare: first entry is the real client
+    if peer_ip in _TRUSTED_PROXIES or not _TRUSTED_PROXIES:
         forwarded = request.headers.get("x-forwarded-for")
         if forwarded:
             return forwarded.split(",")[0].strip()
@@ -673,7 +606,7 @@ def _check_rate_limit(db, identifier: str) -> Tuple[bool, int]:
     failed = db.execute(
         login_attempts.select()
         .where(login_attempts.c.identifier == identifier)
-        .where(login_attempts.c.was_successful == False)  # noqa: E712
+        .where(login_attempts.c.was_successful == False)
         .where(login_attempts.c.attempted_at >= window_start)
         .order_by(login_attempts.c.attempted_at.desc())
     ).fetchall()
@@ -730,14 +663,11 @@ def _find_user_by_credentials(
     u = db.execute(query).fetchone()
     if not u:
         return None
-    # Check active
     is_active = getattr(u, "is_active", True)
     if is_active is False:
         return None
-    # Verify password
     if not verify_password(password, u.password):
         return None
-    # Auto-upgrade plaintext password to hash
     if not u.password.startswith(_HASH_PREFIX):
         try:
             db.execute(
@@ -771,7 +701,6 @@ def _update_user_login_stats(db, user_id: int, ip: str):
         log.error("  login stats update failed: %s", e)
 
 
-# ── Pydantic models ──────────────────────────────────────────────────
 class HistoryItem(BaseModel):
     text: str
 
@@ -786,9 +715,6 @@ class DeviceInfo(BaseModel):
     app_version: Optional[str] = None
 
 
-# ══════════════════════════════════════════════════════════════════════
-#  WEB ROUTES — admin + user dashboards (HTML)
-# ══════════════════════════════════════════════════════════════════════
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -796,7 +722,6 @@ async def home(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
 
-# ── Admin ─────────────────────────────────────────────────────────────
 
 
 @app.get("/admin", response_class=HTMLResponse)
@@ -821,7 +746,6 @@ async def admin_login(request: Request):
     client_ip = _get_client_ip(request)
     db = SessionLocal()
     try:
-        # ── rate limit ────────────────────────────────────────────
         is_locked, seconds_left = _check_rate_limit(db, f"admin:{client_ip}")
         if is_locked:
             mins = (seconds_left // 60) + (1 if seconds_left % 60 else 0)
@@ -833,7 +757,6 @@ async def admin_login(request: Request):
                 },
             )
 
-        # ── banned check ──────────────────────────────────────────
         if _is_user_banned(db, username):
             return templates.TemplateResponse(
                 "admin_login.html",
@@ -1038,7 +961,6 @@ async def add_user(request: Request):
 
     form = await request.form()
 
-    # ── CSRF check ────────────────────────────────────────────────
     csrf_token = (form.get(_CSRF_TOKEN_FIELD) or "").strip()
     if not _validate_csrf_token(request, csrf_token):
         raise HTTPException(status_code=403, detail="Invalid CSRF token")
@@ -1101,7 +1023,6 @@ async def update_user(request: Request):
 
     form = await request.form()
 
-    # ── CSRF check ────────────────────────────────────────────────
     csrf_token = (form.get(_CSRF_TOKEN_FIELD) or "").strip()
     if not _validate_csrf_token(request, csrf_token):
         raise HTTPException(status_code=403, detail="Invalid CSRF token")
@@ -1165,7 +1086,6 @@ async def delete_user(request: Request):
 
     form = await request.form()
 
-    # ── CSRF check ────────────────────────────────────────────────
     csrf_token = (form.get(_CSRF_TOKEN_FIELD) or "").strip()
     if not _validate_csrf_token(request, csrf_token):
         raise HTTPException(status_code=403, detail="Invalid CSRF token")
@@ -1213,7 +1133,6 @@ async def ban_user(request: Request):
 
     form = await request.form()
 
-    # ── CSRF check ────────────────────────────────────────────────
     csrf_token = (form.get(_CSRF_TOKEN_FIELD) or "").strip()
     if not _validate_csrf_token(request, csrf_token):
         raise HTTPException(status_code=403, detail="Invalid CSRF token")
@@ -1239,7 +1158,6 @@ async def ban_user(request: Request):
         if target.username == current_user:
             return _admin_dash_response(request, db, "Cannot ban yourself")
 
-        # Toggle is_active
         currently_active = getattr(target, "is_active", True)
         new_status = not currently_active
         db.execute(
@@ -1249,12 +1167,11 @@ async def ban_user(request: Request):
         )
         db.commit()
 
-        # If banning, also kill all their active sessions
         if not new_status:
             db.execute(
                 login_sessions.update()
                 .where(login_sessions.c.username == target.username)
-                .where(login_sessions.c.is_active == True)  # noqa: E712
+                .where(login_sessions.c.is_active == True)
                 .values(is_active=False)
             )
             db.commit()
@@ -1269,7 +1186,6 @@ async def ban_user(request: Request):
         db.close()
 
 
-# ── User web login ────────────────────────────────────────────────────
 
 
 @app.get("/user/login", response_class=HTMLResponse)
@@ -1294,7 +1210,6 @@ async def user_login(request: Request):
     client_ip = _get_client_ip(request)
     db = SessionLocal()
     try:
-        # ── rate limit ────────────────────────────────────────────
         is_locked, seconds_left = _check_rate_limit(db, f"user:{client_ip}")
         if is_locked:
             mins = (seconds_left // 60) + (1 if seconds_left % 60 else 0)
@@ -1306,7 +1221,6 @@ async def user_login(request: Request):
                 },
             )
 
-        # ── banned check ──────────────────────────────────────────
         if _is_user_banned(db, username):
             return templates.TemplateResponse(
                 "user_login.html",
@@ -1318,8 +1232,6 @@ async def user_login(request: Request):
 
         user = _find_user_by_credentials(db, username, password)
         if user:
-            # ── login cooldown — block rapid re-login from another device ─
-            # Must check BEFORE recording success / bumping login stats
             is_cooled, secs_left = _check_login_cooldown(db, username)
             if is_cooled:
                 return templates.TemplateResponse(
@@ -1333,11 +1245,10 @@ async def user_login(request: Request):
             _record_attempt(db, f"user:{client_ip}", True)
             _update_user_login_stats(db, user.id, client_ip)
 
-            # ── deactivate old web sessions ───────────────────────────
             db.execute(
                 login_sessions.update()
                 .where(login_sessions.c.username == username)
-                .where(login_sessions.c.is_active == True)  # noqa: E712
+                .where(login_sessions.c.is_active == True)
                 .values(is_active=False)
             )
             db.commit()
@@ -1379,9 +1290,6 @@ async def user_logout(request: Request):
     return RedirectResponse(url="/user/login", status_code=303)
 
 
-# ══════════════════════════════════════════════════════════════════════
-#  LEGACY API — /api/authenticate  (kept for backward compat)
-# ══════════════════════════════════════════════════════════════════════
 
 
 @app.post("/api/authenticate")
@@ -1410,7 +1318,6 @@ async def authenticate_user(request: Request):
 
         db = SessionLocal()
         try:
-            # ── banned check ──────────────────────────────────────
             if _is_user_banned(db, username):
                 return JSONResponse(
                     content={
@@ -1421,7 +1328,6 @@ async def authenticate_user(request: Request):
                     status_code=403,
                 )
 
-            # ── rate limit ────────────────────────────────────────
             is_locked, seconds_left = _check_rate_limit(db, f"api:{client_ip}")
             if is_locked:
                 mins = (seconds_left // 60) + (1 if seconds_left % 60 else 0)
@@ -1468,12 +1374,6 @@ async def authenticate_user(request: Request):
         )
 
 
-# ══════════════════════════════════════════════════════════════════════
-#  /api/app/*  — DESKTOP APP ENDPOINTS
-#
-#  All login responses are HMAC-signed so the client can detect
-#  if a MITM proxy tampered with the body.
-# ══════════════════════════════════════════════════════════════════════
 
 
 @app.post("/api/app/login")
@@ -1491,7 +1391,6 @@ async def app_login(request: Request):
     client_ip = _get_client_ip(request)
     db = SessionLocal()
     try:
-        # ── rate limit ────────────────────────────────────────────────
         is_locked, seconds_left = _check_rate_limit(db, client_ip)
         if is_locked:
             mins = (seconds_left // 60) + (1 if seconds_left % 60 else 0)
@@ -1505,7 +1404,6 @@ async def app_login(request: Request):
                 status_code=429,
             )
 
-        # ── parse body ────────────────────────────────────────────────
         try:
             body = await request.json()
         except Exception:
@@ -1544,7 +1442,6 @@ async def app_login(request: Request):
                 status_code=401,
             )
 
-        # ── banned check ──────────────────────────────────────────────
         if _is_user_banned(db, req_username):
             err_code = "ACCOUNT_BANNED"
             err_msg = "Your account has been banned. Please contact admin."
@@ -1561,7 +1458,6 @@ async def app_login(request: Request):
                 status_code=403,
             )
 
-        # ── find user by username + password ──────────────────────────
         user = _find_user_by_credentials(db, req_username, password)
 
         if not user:
@@ -1603,8 +1499,6 @@ async def app_login(request: Request):
         username = user.username
         role = user.role
 
-        # ── login cooldown — block rapid re-login from another device ─
-        # Must check BEFORE recording success / bumping login stats
         is_cooled, secs_left = _check_login_cooldown(db, username)
         if is_cooled:
             err_code = "LOGIN_COOLDOWN"
@@ -1623,20 +1517,17 @@ async def app_login(request: Request):
                 status_code=429,
             )
 
-        # ── record success + update login stats ───────────────────────
         _record_attempt(db, client_ip, True)
         _update_user_login_stats(db, user.id, client_ip)
 
-        # ── deactivate old sessions (single-session) ──────────────────
         db.execute(
             login_sessions.update()
             .where(login_sessions.c.username == username)
-            .where(login_sessions.c.is_active == True)  # noqa: E712
+            .where(login_sessions.c.is_active == True)
             .values(is_active=False)
         )
         db.commit()
 
-        # ── create new session ────────────────────────────────────────
         token = secrets.token_urlsafe(48)
         now = datetime.now(timezone.utc)
 
@@ -1660,7 +1551,6 @@ async def app_login(request: Request):
         )
         db.commit()
 
-        # ── HMAC sign the response ────────────────────────────────────
         ts, sig = _sign_response(client_nonce, username, token)
 
         log.info("App login OK: user=%s  ip=%s", username, client_ip)
@@ -1722,10 +1612,9 @@ async def app_validate_session(request: Request):
         row = db.execute(
             login_sessions.select()
             .where(login_sessions.c.session_token == token)
-            .where(login_sessions.c.is_active == True)  # noqa: E712
+            .where(login_sessions.c.is_active == True)
         ).fetchone()
 
-        # ── check session TTL ─────────────────────────────────────────
         if row and _is_session_expired(row):
             db.execute(
                 login_sessions.update()
@@ -1734,18 +1623,16 @@ async def app_validate_session(request: Request):
             )
             db.commit()
             log.info("Session expired (TTL) for user=%s", row.username)
-            row = None  # treat as no active session
+            row = None
 
         if not row:
-            # Check if the token exists but was deactivated (kicked by another login)
             kicked_row = db.execute(
                 login_sessions.select()
                 .where(login_sessions.c.session_token == token)
-                .where(login_sessions.c.is_active == False)  # noqa: E712
+                .where(login_sessions.c.is_active == False)
             ).fetchone()
 
             if kicked_row:
-                # Check if the user was banned after the session was created
                 if _is_user_banned(db, kicked_row.username):
                     err_code = "ACCOUNT_BANNED"
                     err_msg = "Your account has been banned. Please contact admin."
@@ -1792,9 +1679,7 @@ async def app_validate_session(request: Request):
                 status_code=401,
             )
 
-        # ── banned check on active session ────────────────────────────
         if _is_user_banned(db, row.username):
-            # Deactivate the session immediately
             db.execute(
                 login_sessions.update()
                 .where(login_sessions.c.id == row.id)
@@ -1823,7 +1708,6 @@ async def app_validate_session(request: Request):
         )
         db.commit()
 
-        # ── sign ──────────────────────────────────────────────────────
         ts, sig = _sign_response(client_nonce, row.username, token)
 
         return JSONResponse(
@@ -1887,9 +1771,6 @@ async def app_ping():
     return JSONResponse(content={"status": "ok"})
 
 
-# ══════════════════════════════════════════════════════════════════════
-#  SMART POLLING — lightweight version check to avoid full data fetches
-# ══════════════════════════════════════════════════════════════════════
 
 
 def _compute_table_hash(db, table, username: str) -> str:
@@ -1953,9 +1834,6 @@ async def smart_poll(username: str, request: Request):
         db.close()
 
 
-# ══════════════════════════════════════════════════════════════════════
-#  CLIPBOARD API
-# ══════════════════════════════════════════════════════════════════════
 
 
 def _authorize_clipboard_access(request: Request, username: str) -> bool:
@@ -1965,7 +1843,6 @@ def _authorize_clipboard_access(request: Request, username: str) -> bool:
     app session token passed as a Bearer header.
     Blocked/banned users are always denied.
     """
-    # 0. Banned users are always denied
     db_check = SessionLocal()
     try:
         if _is_user_banned(db_check, username):
@@ -1973,14 +1850,11 @@ def _authorize_clipboard_access(request: Request, username: str) -> bool:
     finally:
         db_check.close()
 
-    # 1. Web session — user accessing own data
     session_user = request.session.get("user", {})
     if session_user.get("username") == username:
         return True
-    # 2. Admin web session
     if session_user.get("role") == "admin":
         return True
-    # 3. App session token via Authorization header (desktop client)
     auth_header = request.headers.get("authorization", "")
     if auth_header.startswith("Bearer "):
         token = auth_header[7:].strip()
@@ -1991,10 +1865,9 @@ def _authorize_clipboard_access(request: Request, username: str) -> bool:
                     login_sessions.select()
                     .where(login_sessions.c.session_token == token)
                     .where(login_sessions.c.username == username)
-                    .where(login_sessions.c.is_active == True)  # noqa: E712
+                    .where(login_sessions.c.is_active == True)
                 ).fetchone()
                 if row:
-                    # Check session TTL
                     if _is_session_expired(row):
                         db.execute(
                             login_sessions.update()
@@ -2043,7 +1916,6 @@ async def submit_to_clipboard(username: str, item: HistoryItem, request: Request
     if not _authorize_clipboard_access(request, username):
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    # ── Input size limit (prevent DoS via huge payloads) ──────────
     if len(item.text) > 10_000:
         return JSONResponse(
             content={"status": "error", "message": "Text too large (max 10KB)"},
@@ -2110,7 +1982,6 @@ async def submit_copied_text(username: str, item: HistoryItem, request: Request)
     if not _authorize_clipboard_access(request, username):
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    # ── Input size limit (prevent DoS via huge payloads) ──────────
     if len(item.text) > 10_000:
         return JSONResponse(
             content={"status": "error", "message": "Text too large (max 10KB)"},
@@ -2232,7 +2103,6 @@ async def submit_submitted_text(username: str, item: HistoryItem, request: Reque
     if not _authorize_clipboard_access(request, username):
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    # ── Input size limit (prevent DoS via huge payloads) ──────────
     if len(item.text) > 10_000:
         return JSONResponse(
             content={"status": "error", "message": "Text too large (max 10KB)"},
@@ -2322,9 +2192,6 @@ async def clear_submitted_text(username: str, request: Request):
         db.close()
 
 
-# ══════════════════════════════════════════════════════════════════════
-#  HELPERS
-# ══════════════════════════════════════════════════════════════════════
 
 
 def _get_all_users(db):
@@ -2339,7 +2206,6 @@ def _is_sqlite() -> bool:
 def _get_session_stats(db):
     """Get per-user active session counts and recent session info."""
     if _is_sqlite():
-        # SQLite does not support FILTER — use CASE/SUM instead
         rows = db.execute(
             text(
                 """
@@ -2413,7 +2279,6 @@ def _get_total_stats(db):
         ).scalar()
         or 0
     )
-    # Use compatible date arithmetic for both PostgreSQL and SQLite
     if _is_sqlite():
         recent_logins = (
             db.execute(
@@ -2465,7 +2330,6 @@ def _admin_dash_response(request, db, message=None):
     except Exception:
         text_counts = {}
 
-    # Generate CSRF token for all forms
     csrf_token = _generate_csrf_token(request)
 
     ctx = {

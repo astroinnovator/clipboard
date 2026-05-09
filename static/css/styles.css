@@ -1,4 +1,4 @@
-/* Modern AssistX UI - Glassmorphism & Gradient Design */
+
 
 * {
     margin: 0;
@@ -57,7 +57,7 @@ body::before {
     }
 }
 
-/* Header */
+
 header {
     background: var(--glass-bg);
     backdrop-filter: blur(20px);
@@ -69,7 +69,7 @@ header {
     z-index: 10;
 }
 
-/* Navbar */
+
 .navbar {
     display: flex;
     justify-content: space-between;
@@ -145,7 +145,7 @@ header p {
     margin-bottom: 0;
 }
 
-/* Main Content */
+
 main {
     flex: 1;
     display: flex;
@@ -156,7 +156,7 @@ main {
     z-index: 1;
 }
 
-/* Login Section - Glassmorphism */
+
 .login-section {
     max-width: 440px;
     width: 100%;
@@ -244,7 +244,7 @@ main {
     margin-top: 10px;
 }
 
-/* Error & Info Messages */
+
 .error-message {
     color: #ff6b6b;
     background: rgba(255, 107, 107, 0.15);
@@ -285,7 +285,7 @@ main {
     border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
-/* Container - Dashboard */
+
 .container {
     max-width: 1000px;
     width: 100%;
@@ -315,7 +315,7 @@ main {
     margin-bottom: 25px;
 }
 
-/* Form Section */
+
 .form-section {
     padding: 35px;
     background: rgba(255, 255, 255, 0.05);
@@ -383,7 +383,7 @@ main {
     box-shadow: 0 8px 25px rgba(79, 172, 254, 0.6);
 }
 
-/* History Section */
+
 .history {
     padding: 35px;
     background: rgba(255, 255, 255, 0.05);
@@ -455,7 +455,7 @@ main {
     line-height: 1.5;
 }
 
-/* Buttons */
+
 .copy-btn,
 .delete-btn {
     padding: 10px 18px;
@@ -510,7 +510,7 @@ main {
     box-shadow: 0 8px 25px rgba(250, 112, 154, 0.6);
 }
 
-/* Footer */
+
 footer {
     background: var(--glass-bg);
     backdrop-filter: blur(20px);
@@ -562,7 +562,7 @@ footer p {
     margin: 0;
 }
 
-/* Admin Dashboard */
+
 .add-user-form {
     margin-bottom: 30px;
     padding: 30px;
@@ -622,7 +622,7 @@ footer p {
     box-shadow: 0 6px 15px rgba(79, 172, 254, 0.5);
 }
 
-/* Table */
+
 table {
     width: 100%;
     border-collapse: separate;
@@ -707,7 +707,7 @@ td:last-child {
     box-shadow: 0 4px 12px rgba(79, 172, 254, 0.4);
 }
 
-/* Animations */
+
 @keyframes fadeInUp {
     from {
         opacity: 0;
@@ -754,7 +754,7 @@ td:last-child {
     }
 }
 
-/* Responsive Design */
+
 @media (max-width: 768px) {
     header {
         padding: 15px 20px;
@@ -819,7 +819,7 @@ td:last-child {
     }
 }
 
-/* Loading Animation */
+
 .loading {
     display: inline-block;
     width: 20px;

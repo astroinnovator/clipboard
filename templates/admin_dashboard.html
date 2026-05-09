@@ -586,12 +586,12 @@
 
         <main>
             <div class="container">
-                <!-- ── Flash Message ──────────────────── -->
+                
                 {% if message %}
                 <div class="toast" id="toast">{{ message }}</div>
                 {% endif %}
 
-                <!-- ── Stats Cards ────────────────────── -->
+                
                 <div class="stats-row">
                     <div class="stat-card">
                         <div class="stat-value">{{ stats.total_users }}</div>
@@ -617,7 +617,7 @@
                     </div>
                 </div>
 
-                <!-- ── Add User ───────────────────────── -->
+                
                 <div class="section-title">
                     <span class="icon">+</span> Add New User
                 </div>
@@ -660,7 +660,7 @@
                     </form>
                 </div>
 
-                <!-- ── User Table ─────────────────────── -->
+                
                 <div class="section-title">
                     <span class="icon">&#9783;</span> All Users
                 </div>
@@ -742,7 +742,7 @@
                                 </td>
                                 <td>
                                     <div class="actions">
-                                        <!-- History -->
+                                        
                                         <button
                                             class="btn btn-history"
                                             type="button"
@@ -751,7 +751,7 @@
                                             &#128203; History
                                         </button>
 
-                                        <!-- Edit -->
+                                        
                                         <button
                                             class="btn btn-edit"
                                             type="button"
@@ -760,7 +760,7 @@
                                             Edit
                                         </button>
 
-                                        <!-- Ban / Unban -->
+                                        
                                         <form
                                             action="/admin/ban_user"
                                             method="post"
@@ -794,7 +794,7 @@
                                             {% endif %}
                                         </form>
 
-                                        <!-- Delete -->
+                                        
                                         <form
                                             action="/admin/delete_user"
                                             method="post"
@@ -828,12 +828,12 @@
             </div>
         </main>
 
-        <!-- ── History Modal ──────────────────────────── -->
+        
         <div class="modal-overlay" id="historyModal">
             <div class="history-modal">
                 <h3>Text History</h3>
                 <div class="history-modal-user" id="history-modal-user"></div>
-                <!-- Tab switcher -->
+                
                 <div
                     style="
                         display: flex;
@@ -905,7 +905,7 @@
             </div>
         </div>
 
-        <!-- ── Edit Modal ─────────────────────────────── -->
+        
         <div class="modal-overlay" id="editModal">
             <div class="modal">
                 <h3>Edit User</h3>

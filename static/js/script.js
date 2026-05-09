@@ -1,8 +1,8 @@
-// ══════════════════════════════════════════════════════════════════════
-//  AssistX — User Dashboard Script (Smart Polling)
-// ══════════════════════════════════════════════════════════════════════
 
-// DOM Elements
+
+
+
+
 const textInput = document.getElementById("text-input");
 const actionMode = document.getElementById("action-mode");
 const submitBtn = document.getElementById("submit-btn");
@@ -22,20 +22,20 @@ clipboardManagerSection.appendChild(errorMessage);
 
 const username = document.querySelector("header p").textContent.split(": ")[1];
 
-// ── Smart Polling State ──────────────────────────────────────────────
+
 let pollTimer = null;
-const POLL_INTERVAL = 5000; // 5 seconds — check version hashes
+const POLL_INTERVAL = 5000; 
 const cachedVersions = {
   copied: "",
   submitted: "",
   clipboard: "",
 };
 let lastCopiedTextHash = "";
-let activeSection = "clipboard-manager"; // 'clipboard-manager' or 'copied-text'
+let activeSection = "clipboard-manager"; 
 
-// ══════════════════════════════════════════════════════════════════════
-//  SMART POLL — lightweight version check (~120 bytes)
-// ══════════════════════════════════════════════════════════════════════
+
+
+
 
 async function smartPoll() {
   try {
@@ -49,16 +49,16 @@ async function smartPoll() {
 
     const v = data.v;
 
-    // Check what changed and only fetch what's needed
+    
     const copiedChanged = v.copied !== cachedVersions.copied;
     const submittedChanged = v.submitted !== cachedVersions.submitted;
 
-    // Update cached versions
+    
     cachedVersions.copied = v.copied;
     cachedVersions.submitted = v.submitted;
     cachedVersions.clipboard = v.clipboard;
 
-    // Only fetch full data for things that changed AND are visible
+    
     if (copiedChanged && activeSection === "copied-text") {
       await loadCopiedText();
     }
@@ -66,14 +66,14 @@ async function smartPoll() {
       await loadSubmittedTextHistory();
     }
   } catch (err) {
-    // Silently ignore poll errors — next poll will retry
+    
     console.debug("Poll check failed:", err.message);
   }
 }
 
 function startPolling() {
   stopPolling();
-  // Do an immediate poll, then schedule recurring
+  
   smartPoll();
   pollTimer = setInterval(smartPoll, POLL_INTERVAL);
 }
@@ -85,9 +85,9 @@ function stopPolling() {
   }
 }
 
-// ══════════════════════════════════════════════════════════════════════
-//  SECTION TOGGLING
-// ══════════════════════════════════════════════════════════════════════
+
+
+
 
 function showClipboardManager() {
   activeSection = "clipboard-manager";
@@ -95,7 +95,7 @@ function showClipboardManager() {
   copiedTextSection.style.display = "none";
   clipboardManagerBtn.classList.add("active");
   copiedTextBtn.classList.remove("active");
-  // Load immediately on tab switch, then let smart poll handle updates
+  
   loadSubmittedTextHistory();
 }
 
@@ -105,7 +105,7 @@ function showCopiedText() {
   copiedTextSection.style.display = "block";
   clipboardManagerBtn.classList.remove("active");
   copiedTextBtn.classList.add("active");
-  // Invalidate cached version so next poll forces a refresh
+  
   cachedVersions.copied = "";
   loadCopiedText();
 }
@@ -113,9 +113,9 @@ function showCopiedText() {
 clipboardManagerBtn.addEventListener("click", showClipboardManager);
 copiedTextBtn.addEventListener("click", showCopiedText);
 
-// ══════════════════════════════════════════════════════════════════════
-//  DATA FETCHING (only called when smart poll detects a change)
-// ══════════════════════════════════════════════════════════════════════
+
+
+
 
 async function loadSubmittedTextHistory() {
   try {
@@ -185,12 +185,12 @@ async function loadCopiedText() {
   }
 }
 
-// ══════════════════════════════════════════════════════════════════════
-//  UI BUILDERS
-// ══════════════════════════════════════════════════════════════════════
+
+
+
 
 function addToSubmittedTextHistory(text) {
-  // Deduplicate
+  
   const existingItems = historyList.getElementsByTagName("li");
   for (let item of existingItems) {
     if (
@@ -250,7 +250,7 @@ function addToSubmittedTextHistory(text) {
 }
 
 function addToCopiedText(text) {
-  // Deduplicate — if exists, move to top
+  
   const existingItems = copiedTextList.getElementsByTagName("li");
   for (let item of existingItems) {
     if (
@@ -310,9 +310,9 @@ function addToCopiedText(text) {
   copiedTextList.insertBefore(listItem, copiedTextList.firstChild);
 }
 
-// ══════════════════════════════════════════════════════════════════════
-//  CLEAR ACTIONS
-// ══════════════════════════════════════════════════════════════════════
+
+
+
 
 clearHistoryBtn.addEventListener("click", async () => {
   historyList.innerHTML = "";
@@ -363,9 +363,9 @@ clearCopiedTextBtn.addEventListener("click", async () => {
   }
 });
 
-// ══════════════════════════════════════════════════════════════════════
-//  SUBMIT ACTION
-// ══════════════════════════════════════════════════════════════════════
+
+
+
 
 submitBtn.addEventListener("click", async () => {
   const text = textInput.value.trim();
@@ -436,21 +436,21 @@ submitBtn.addEventListener("click", async () => {
   }
 });
 
-// ══════════════════════════════════════════════════════════════════════
-//  PAGE LIFECYCLE
-// ══════════════════════════════════════════════════════════════════════
+
+
+
 
 document.addEventListener("DOMContentLoaded", () => {
   showClipboardManager();
   startPolling();
 });
 
-// Stop polling when tab is not visible (saves even more requests)
+
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) {
     stopPolling();
   } else {
-    // Invalidate caches so the next poll forces a refresh
+    
     cachedVersions.copied = "";
     cachedVersions.submitted = "";
     cachedVersions.clipboard = "";
