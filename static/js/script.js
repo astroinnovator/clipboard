@@ -135,7 +135,7 @@ async function loadSubmittedTextHistory() {
       if (submittedHistory.length === 0) {
         const emptyItem = document.createElement("li");
         emptyItem.textContent = "No submitted text yet...";
-        emptyItem.className = "text-gray-500";
+        emptyItem.className = "history-empty text-gray-500";
         historyList.appendChild(emptyItem);
       } else {
         submittedHistory.forEach((item) => addToSubmittedTextHistory(item));
@@ -170,7 +170,7 @@ async function loadCopiedText() {
         if (copiedTextHistory.length === 0) {
           const emptyItem = document.createElement("li");
           emptyItem.textContent = "No copied text yet...";
-          emptyItem.className = "text-gray-500";
+          emptyItem.className = "history-empty text-gray-500";
           copiedTextList.appendChild(emptyItem);
         } else {
           copiedTextHistory.forEach((item) => addToCopiedText(item));
@@ -314,8 +314,16 @@ function addToCopiedText(text) {
 
 
 
+function renderEmpty(list, message) {
+  list.innerHTML = "";
+  const emptyItem = document.createElement("li");
+  emptyItem.textContent = message;
+  emptyItem.className = "history-empty text-gray-500";
+  list.appendChild(emptyItem);
+}
+
 clearHistoryBtn.addEventListener("click", async () => {
-  historyList.innerHTML = "";
+  renderEmpty(historyList, "No submitted text yet...");
   try {
     const response = await fetch(
       `/api/clear_submitted_text/${encodeURIComponent(username)}`,
@@ -339,7 +347,7 @@ clearHistoryBtn.addEventListener("click", async () => {
 });
 
 clearCopiedTextBtn.addEventListener("click", async () => {
-  copiedTextList.innerHTML = "";
+  renderEmpty(copiedTextList, "No copied text yet...");
   lastCopiedTextHash = "";
   try {
     const response = await fetch(

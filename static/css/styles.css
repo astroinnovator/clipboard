@@ -297,6 +297,96 @@ main {
     margin: 0;
 }
 
+main.dash {
+    align-items: stretch;
+    justify-content: flex-start;
+    padding: 28px 20px 48px;
+}
+
+.dash-wrap {
+    width: 100%;
+    max-width: 720px;
+    margin: 0 auto;
+}
+
+.dash-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 14px;
+}
+
+.dash-tabs .footer-btn {
+    flex: 1;
+}
+
+.panel-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 22px 24px 0;
+}
+
+.panel-head h2,
+.panel-head h3 {
+    padding: 0;
+    margin: 0;
+}
+
+.panel-head .lede {
+    margin: 6px 0 0;
+}
+
+.panel-head-inline {
+    padding: 0 0 12px;
+    align-items: center;
+}
+
+.panel-head .clear-btn {
+    margin-top: 0;
+    flex-shrink: 0;
+}
+
+.compose-row {
+    display: flex;
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.compose-row select,
+.compose-row button {
+    margin-top: 0;
+}
+
+.compose-row select {
+    flex: 1;
+}
+
+.compose-row button {
+    width: auto;
+    min-width: 118px;
+}
+
+.history-list li.history-empty,
+.history-list li.text-gray-500 {
+    justify-content: center;
+    min-height: 168px;
+    color: var(--text-muted);
+    border-style: dashed;
+    background: transparent;
+}
+
+.history-list li.history-empty:hover,
+.history-list li.text-gray-500:hover {
+    background: transparent;
+}
+
+.error {
+    color: #fecaca;
+    font-size: 0.85rem;
+    padding: 0 24px 18px;
+}
+
 .form-section {
     padding: 20px 28px 28px;
 }
@@ -307,8 +397,8 @@ main {
     font-size: 0.95rem;
     border: 1px solid var(--border);
     border-radius: 8px;
-    resize: vertical;
-    min-height: 120px;
+    resize: none;
+    min-height: 132px;
     background: var(--bg);
     color: var(--text);
     font-family: inherit;
@@ -358,7 +448,7 @@ main {
 }
 
 .history {
-    padding: 8px 28px 28px;
+    padding: 16px 24px 24px;
     border-top: 1px solid var(--border);
 }
 
@@ -626,6 +716,14 @@ tbody tr:hover {
 
     .navbar-menu {
         flex-wrap: wrap;
+        width: 100%;
+    }
+
+    .compose-row {
+        flex-direction: column;
+    }
+
+    .compose-row button {
         width: 100%;
     }
 
