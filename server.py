@@ -348,7 +348,7 @@ RATE_LIMIT_WINDOW_MINUTES = 5
 
 LOGIN_COOLDOWN_SECONDS = int(os.getenv("LOGIN_COOLDOWN_SECONDS", "5"))
 
-SESSION_MAX_AGE_HOURS = int(os.getenv("SESSION_MAX_AGE_HOURS", "24"))
+SESSION_MAX_AGE_HOURS = int(os.getenv("SESSION_MAX_AGE_HOURS", "72"))
 
 
 def _is_session_expired(row) -> bool:
@@ -1563,6 +1563,8 @@ async def app_login(request: Request):
                 "nonce": client_nonce,
                 "ts": ts,
                 "sig": sig,
+                "expires_in": int(SESSION_MAX_AGE_HOURS * 3600),
+                "session_hours": SESSION_MAX_AGE_HOURS,
             }
         )
 
@@ -1623,7 +1625,20 @@ async def app_validate_session(request: Request):
             )
             db.commit()
             log.info("Session expired (TTL) for user=%s", row.username)
-            row = None
+            err_code = "SESSION_EXPIRED"
+            err_msg = "Session expired. Please sign in again."
+            ts, sig = _sign_error_response(client_nonce, err_code, err_msg)
+            return JSONResponse(
+                content={
+                    "status": "error",
+                    "code": err_code,
+                    "message": err_msg,
+                    "nonce": client_nonce,
+                    "ts": ts,
+                    "sig": sig,
+                },
+                status_code=401,
+            )
 
         if not row:
             kicked_row = db.execute(
@@ -1649,8 +1664,12 @@ async def app_validate_session(request: Request):
                         status_code=403,
                     )
 
-                err_code = "SESSION_KICKED"
-                err_msg = "Your account was logged in from another device. You have been logged out."
+                if _is_session_expired(kicked_row):
+                    err_code = "SESSION_EXPIRED"
+                    err_msg = "Session expired. Please sign in again."
+                else:
+                    err_code = "SESSION_KICKED"
+                    err_msg = "Your account was logged in from another device. You have been logged out."
                 ts, sig = _sign_error_response(client_nonce, err_code, err_msg)
                 return JSONResponse(
                     content={
@@ -1710,6 +1729,14 @@ async def app_validate_session(request: Request):
 
         ts, sig = _sign_response(client_nonce, row.username, token)
 
+        remaining = 0
+        logged_in = row.logged_in_at
+        if logged_in is not None:
+            if logged_in.tzinfo is None:
+                logged_in = logged_in.replace(tzinfo=timezone.utc)
+            age = (datetime.now(timezone.utc) - logged_in).total_seconds()
+            remaining = max(0, int(SESSION_MAX_AGE_HOURS * 3600 - age))
+
         return JSONResponse(
             content={
                 "status": "success",
@@ -1718,6 +1745,8 @@ async def app_validate_session(request: Request):
                 "nonce": client_nonce,
                 "ts": ts,
                 "sig": sig,
+                "expires_in": remaining,
+                "session_hours": SESSION_MAX_AGE_HOURS,
             }
         )
     except Exception as e:
