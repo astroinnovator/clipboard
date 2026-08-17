@@ -3,9 +3,9 @@
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Admin Login - SysBridge</title>
+        <title>Admin login — SysBridge</title>
         <link
-            href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap"
+            href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;650;700&display=swap"
             rel="stylesheet"
         />
         <link rel="stylesheet" href="/static/css/styles.css" />
@@ -19,31 +19,38 @@
                 </div>
                 <nav class="navbar-menu">
                     <a href="/" class="nav-link">Home</a>
-                    <a href="/user/login" class="nav-link">User Login</a>
-                    <a href="/admin" class="nav-link active">Admin Login</a>
+                    <a href="/user/login" class="nav-link">User login</a>
                 </nav>
             </div>
-            <p>Admin Portal</p>
         </header>
 
         <main>
             <div class="login-section">
-                <h2>Admin Login</h2>
+                <h2>Admin console</h2>
+                <p class="lede">Restricted access for operators only.</p>
                 <form method="POST" action="/admin/login">
-                    <input
-                        type="text"
-                        name="username"
-                        placeholder="Username"
-                        required
-                    />
-                    <input
-                        type="password"
-                        name="password"
-                        placeholder="Password"
-                        minlength="6"
-                        required
-                    />
-                    <button type="submit">Login</button>
+                    <label class="field">
+                        <span>Username</span>
+                        <input
+                            type="text"
+                            name="username"
+                            placeholder="admin"
+                            required
+                            autocomplete="username"
+                        />
+                    </label>
+                    <label class="field">
+                        <span>Password</span>
+                        <input
+                            type="password"
+                            name="password"
+                            placeholder="••••••••"
+                            minlength="6"
+                            required
+                            autocomplete="current-password"
+                        />
+                    </label>
+                    <button type="submit">Sign in</button>
                 </form>
                 {% if error %}
                 <p class="error-message">{{ error }}</p>
@@ -52,7 +59,7 @@
         </main>
 
         <footer>
-            <p>&copy; 2024 SysBridge</p>
+            <p>&copy; 2026 SysBridge</p>
         </footer>
     </body>
 </html>

@@ -3,12 +3,13 @@
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>SysBridge - Login</title>
+        <title>SysBridge</title>
         <link
-            href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap"
+            href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;650;700&display=swap"
             rel="stylesheet"
         />
         <link rel="stylesheet" href="/static/css/styles.css" />
+        <link rel="icon" href="/static/favicon.ico" />
     </head>
     <body>
         <header>
@@ -17,26 +18,30 @@
                     <h1>SysBridge</h1>
                 </div>
                 <nav class="navbar-menu">
-                    <a href="/" class="nav-link active">Home</a>
-                    <a href="/user/login" class="nav-link">User Login</a>
-                    <a href="/admin" class="nav-link">Admin Login</a>
+                    <a href="/user/login" class="nav-link">User login</a>
+                    <a href="/admin" class="nav-link">Admin</a>
                 </nav>
             </div>
-            <p>Secure Clipboard Management System</p>
         </header>
 
         <main>
             <div class="login-section">
-                <h2>Welcome to SysBridge</h2>
+                <h2>Secure clipboard access</h2>
+                <p class="lede">
+                    Sign in to manage synced clipboard history. Admin access is
+                    separate.
+                </p>
                 <div class="button-group">
-                    <a href="/user/login" class="nav-button">User Login</a>
-                    <a href="/admin" class="nav-button">Admin Login</a>
+                    <a href="/user/login" class="nav-button">Continue as user</a>
+                    <a href="/admin" class="nav-button nav-button-secondary"
+                        >Admin console</a
+                    >
                 </div>
             </div>
         </main>
 
         <footer>
-            <p>&copy; 2024 SysBridge</p>
+            <p>&copy; 2026 SysBridge</p>
         </footer>
     </body>
 </html>
