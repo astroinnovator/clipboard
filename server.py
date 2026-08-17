@@ -717,15 +717,28 @@ class DeviceInfo(BaseModel):
 
 
 
+def _logged_in_home(request: Request):
+    """Send an already-signed-in visitor to their dashboard instead of the public home."""
+    role = (request.session.get("user") or {}).get("role")
+    if role == "admin":
+        return RedirectResponse(url="/admin/dashboard", status_code=303)
+    if role == "user":
+        return RedirectResponse(url="/user/dashboard", status_code=303)
+    return None
+
+
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
+    redirect = _logged_in_home(request)
+    if redirect:
+        return redirect
     return templates.TemplateResponse("index.html", {"request": request})
-
-
 
 
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_login_page(request: Request, error: str | None = None):
+    if (request.session.get("user") or {}).get("role") == "admin":
+        return RedirectResponse(url="/admin/dashboard", status_code=303)
     return templates.TemplateResponse(
         "admin_login.html", {"request": request, "error": error}
     )
@@ -1190,6 +1203,8 @@ async def ban_user(request: Request):
 
 @app.get("/user/login", response_class=HTMLResponse)
 async def user_login_page(request: Request, error: str | None = None):
+    if (request.session.get("user") or {}).get("role") == "user":
+        return RedirectResponse(url="/user/dashboard", status_code=303)
     return templates.TemplateResponse(
         "user_login.html", {"request": request, "error": error}
     )
